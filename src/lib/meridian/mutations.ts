@@ -204,19 +204,8 @@ export async function createCareTaskSafe(values: {
   assignedCaregiver?: string;
   carePlan?: string;
 }): Promise<CareTask> {
-  const sdk = requireSdk();
-  const created = await sdk.createRecord(
-    MERIDIAN_OBJECTS.careTask,
-    {
-      patient: values.patient,
-      description: values.description,
-      priority: values.priority || "Medium",
-      status: values.status || "Pending",
-      dueDate: values.dueDate,
-      assignedCaregiver: values.assignedCaregiver,
-      carePlan: values.carePlan,
-    },
-    "CareCircle demo: create care task",
-  );
-  return normalizeTask(created as Record<string, unknown>);
+  // Delegate to care-data createCareTask so Patient–Care Plan consistency
+  // is always enforced server-side before any Meridian write.
+  const { createCareTask } = await import("@/lib/meridian/care-data");
+  return createCareTask(values);
 }

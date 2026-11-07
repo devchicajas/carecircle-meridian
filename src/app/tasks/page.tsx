@@ -44,6 +44,9 @@ export default async function TasksPage() {
           <p className="mt-2 max-w-2xl text-ink-600">
             Create and update tasks through Meridian Object API (
             <code>careTask</code>). Business IDs are generated server-side.
+            CareCircle also verifies that a task&apos;s Patient matches its Care
+            Plan&apos;s Patient before every write (server-side only — not a
+            Meridian-global rule).
           </p>
         </div>
 
@@ -68,7 +71,8 @@ export default async function TasksPage() {
           }))}
           carePlans={snapshot.carePlans.map((p) => ({
             value: p.businessId || p.id,
-            label: `${p.businessId || p.id} · ${p.status}`,
+            label: `${p.businessId || p.id} · ${p.status} · ${resolvePatientLabel(snapshot.patients, p.patientRef) || p.patientRef || "Patient?"}`,
+            patientRef: p.patientRef,
           }))}
         />
 

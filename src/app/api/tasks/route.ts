@@ -1,5 +1,6 @@
 import { requireAppUser, privateJson } from "@/lib/auth";
 import { createCareTask, loadCareSnapshot } from "@/lib/meridian/care-data";
+import { TaskConsistencyError } from "@/lib/meridian/task-consistency";
 import { PlatformSDKError } from "@/lib/sdk/platformSDK";
 
 export const dynamic = "force-dynamic";
@@ -52,8 +53,26 @@ export async function POST(request: Request) {
       carePlan: body.carePlan,
     });
 
-    return privateJson({ task }, { status: 201 });
+    return privateJson(
+      {
+        task,
+        validation:
+          "CareCircle server verified Patient–Care Plan consistency before write (not Meridian-global).",
+      },
+      { status: 201 },
+    );
   } catch (err) {
+    if (err instanceof TaskConsistencyError) {
+      return privateJson(
+        {
+          error: err.error,
+          errorEs: err.errorEs,
+          code: err.code,
+          enforcedBy: "carecircle-nextjs",
+        },
+        { status: err.status },
+      );
+    }
     if (err instanceof PlatformSDKError) {
       return privateJson(
         {

@@ -6,6 +6,11 @@ import {
   recordEnvelopeId,
 } from "@/lib/meridian/records";
 import {
+  assertTaskPatientMatchesCarePlan,
+  canonicalCarePlanWriteRef,
+  canonicalPatientWriteRef,
+} from "@/lib/meridian/task-consistency";
+import {
   createPlatformSDKFromEnv,
   PlatformSDKError,
 } from "@/lib/sdk/platformSDK";
@@ -614,8 +619,15 @@ export async function createCareTask(values: {
     });
   }
 
+  // Server-side CareCircle validation (not Meridian-global).
+  const consistency = await assertTaskPatientMatchesCarePlan({
+    patientRef: values.patient,
+    carePlanRef: values.carePlan,
+    sdk,
+  });
+
   const payload: Record<string, unknown> = {
-    patient: values.patient,
+    patient: canonicalPatientWriteRef(consistency.patient),
     description: values.description,
     priority: values.priority || "Medium",
     status: values.status || "Pending",
@@ -624,19 +636,54 @@ export async function createCareTask(values: {
   if (values.assignedCaregiver) {
     payload.assignedCaregiver = values.assignedCaregiver;
   }
-  if (values.carePlan) payload.carePlan = values.carePlan;
+  if (consistency.carePlan) {
+    payload.carePlan = canonicalCarePlanWriteRef(consistency.carePlan);
+  }
 
   const created = await sdk.createRecord(
     MERIDIAN_OBJECTS.careTask,
     payload,
-    "CareCircle demo: create care task",
+    "CareCircle: create care task after patient/care-plan check",
   );
-  return normalizeTask(created as Record<string, unknown>);
+  const createdTask = normalizeTask(created as Record<string, unknown>);
+
+  // Read back from Meridian to verify persistence.
+  const { records } = await sdk.listRecords(MERIDIAN_OBJECTS.careTask, {
+    limit: 200,
+  });
+  const saved =
+    (records as Record<string, unknown>[]).find(
+      (row) => String(row.id) === createdTask.id,
+    ) ?? null;
+  if (!saved) {
+    throw new PlatformSDKError({
+      status: 502,
+      code: "READBACK_FAILED",
+      detail:
+        "Care Task write appeared to succeed but the record could not be read back from Meridian.",
+    });
+  }
+  return normalizeTask(saved);
 }
 
 export async function updateCareTaskStatus(
   taskId: string,
   status: string,
+) {
+  return updateCareTask(taskId, { status });
+}
+
+export async function updateCareTask(
+  taskId: string,
+  patch: {
+    status?: string;
+    patient?: string;
+    carePlan?: string | null;
+    description?: string;
+    priority?: string;
+    dueDate?: string;
+    assignedCaregiver?: string;
+  },
 ) {
   const sdk = createPlatformSDKFromEnv();
   if (!sdk) {
@@ -647,18 +694,114 @@ export async function updateCareTaskStatus(
     });
   }
 
-  const values: Record<string, unknown> = { status };
-  if (/complete/i.test(status)) {
-    values.completedOn = new Date().toISOString().slice(0, 10);
+  const { records } = await sdk.listRecords(MERIDIAN_OBJECTS.careTask, {
+    limit: 200,
+  });
+  const existingRow = (records as Record<string, unknown>[]).find(
+    (row) => String(row.id) === taskId,
+  );
+  if (!existingRow) {
+    throw new PlatformSDKError({
+      status: 404,
+      code: "NOT_FOUND",
+      detail: `Care Task ${taskId} was not found in Meridian.`,
+    });
+  }
+  const existing = normalizeTask(existingRow);
+
+  const nextPatient = patch.patient ?? existing.patientRef;
+  const nextCarePlan =
+    patch.carePlan === null
+      ? undefined
+      : patch.carePlan !== undefined
+        ? patch.carePlan
+        : existing.carePlanRef;
+
+  if (!nextPatient) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "PATIENT_REQUIRED",
+      detail: "Care Task updates require a resolvable Patient reference.",
+    });
+  }
+
+  const patientOrPlanChanging =
+    patch.patient !== undefined || patch.carePlan !== undefined;
+
+  let writePatient = nextPatient;
+  let writeCarePlan = nextCarePlan;
+
+  if (patientOrPlanChanging || nextCarePlan) {
+    // Revalidate resulting Patient + Care Plan combination against Meridian.
+    const consistency = await assertTaskPatientMatchesCarePlan({
+      patientRef: nextPatient,
+      carePlanRef: nextCarePlan,
+      sdk,
+    });
+    writePatient = canonicalPatientWriteRef(consistency.patient);
+    writeCarePlan = consistency.carePlan
+      ? canonicalCarePlanWriteRef(consistency.carePlan)
+      : undefined;
+  }
+
+  const values: Record<string, unknown> = {};
+  if (patch.status !== undefined) {
+    values.status = patch.status;
+    if (/complete/i.test(patch.status)) {
+      values.completedOn = new Date().toISOString().slice(0, 10);
+    }
+  }
+  if (patch.description !== undefined) values.description = patch.description;
+  if (patch.priority !== undefined) values.priority = patch.priority;
+  if (patch.dueDate !== undefined) values.dueDate = patch.dueDate;
+  if (patch.assignedCaregiver !== undefined) {
+    values.assignedCaregiver = patch.assignedCaregiver;
+  }
+  if (patientOrPlanChanging) {
+    values.patient = writePatient;
+    if (writeCarePlan) values.carePlan = writeCarePlan;
+    if (patch.carePlan === null) values.carePlan = "";
+  }
+
+  if (Object.keys(values).length === 0) {
+    return existing;
   }
 
   const updated = await sdk.updateRecord(
     MERIDIAN_OBJECTS.careTask,
     taskId,
     values,
-    "CareCircle demo: update care task status",
+    "CareCircle: update care task after patient/care-plan check",
   );
-  return normalizeTask(updated as Record<string, unknown>);
+  const updatedTask = normalizeTask(updated as Record<string, unknown>);
+
+  const { records: again } = await sdk.listRecords(MERIDIAN_OBJECTS.careTask, {
+    limit: 200,
+  });
+  const saved =
+    (again as Record<string, unknown>[]).find(
+      (row) => String(row.id) === taskId,
+    ) ?? null;
+  if (!saved) {
+    throw new PlatformSDKError({
+      status: 502,
+      code: "READBACK_FAILED",
+      detail:
+        "Care Task update appeared to succeed but the record could not be read back from Meridian.",
+    });
+  }
+
+  // Final verification of persisted combination when a plan is present.
+  const persisted = normalizeTask(saved);
+  if (persisted.carePlanRef) {
+    await assertTaskPatientMatchesCarePlan({
+      patientRef: persisted.patientRef || writePatient,
+      carePlanRef: persisted.carePlanRef,
+      sdk,
+    });
+  }
+
+  return persisted;
 }
 
 export async function updateNotificationReadStatus(

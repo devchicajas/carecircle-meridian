@@ -1,5 +1,6 @@
 import { requireAppUser, privateJson } from "@/lib/auth";
-import { updateCareTaskStatus } from "@/lib/meridian/care-data";
+import { updateCareTask } from "@/lib/meridian/care-data";
+import { TaskConsistencyError } from "@/lib/meridian/task-consistency";
 import { PlatformSDKError } from "@/lib/sdk/platformSDK";
 
 export const dynamic = "force-dynamic";
@@ -13,17 +14,49 @@ export async function PATCH(
 
   const { id } = await context.params;
   try {
-    const body = (await request.json()) as { status?: string };
-    if (!body.status || typeof body.status !== "string") {
-      return privateJson({ error: "status is required" }, { status: 400 });
+    const body = (await request.json()) as {
+      status?: string;
+      patient?: string;
+      carePlan?: string | null;
+      description?: string;
+      priority?: string;
+      dueDate?: string;
+      assignedCaregiver?: string;
+    };
+
+    if (
+      body.status === undefined &&
+      body.patient === undefined &&
+      body.carePlan === undefined &&
+      body.description === undefined &&
+      body.priority === undefined &&
+      body.dueDate === undefined &&
+      body.assignedCaregiver === undefined
+    ) {
+      return privateJson(
+        { error: "At least one updatable field is required" },
+        { status: 400 },
+      );
     }
 
-    const task = await updateCareTaskStatus(
-      decodeURIComponent(id),
-      body.status,
-    );
-    return privateJson({ task });
+    const task = await updateCareTask(decodeURIComponent(id), body);
+    return privateJson({
+      task,
+      validation:
+        "CareCircle server revalidated Patient–Care Plan consistency for the resulting task (not Meridian-global).",
+    });
   } catch (err) {
+    if (err instanceof TaskConsistencyError) {
+      return privateJson(
+        {
+          error: err.error,
+          errorEs: err.errorEs,
+          code: err.code,
+          enforcedBy: "carecircle-nextjs",
+        },
+        { status: err.status },
+      );
+    }
     if (err instanceof PlatformSDKError) {
       return privateJson(
         {

@@ -31,7 +31,9 @@ export function TaskRow({ task }: { task: TaskView }) {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data?.error || data?.code || "Update failed");
+        const en = data?.error || data?.code || "Update failed";
+        const es = data?.errorEs ? ` · ${data.errorEs}` : "";
+        throw new Error(`${en}${es}`);
       }
       router.refresh();
     } catch (err) {
