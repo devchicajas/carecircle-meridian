@@ -17,10 +17,17 @@ Or `POST /api/admin/bootstrap` with header `X-Admin-Bootstrap-Token`.
 
 ## Admin Dashboard (`/admin`)
 
+- **Improve / create Meridian membership**: pick Patient + Caregiver, relationship, Active/Inactive → saved and verified in Meridian
+- Activating is **exclusive per Patient/Caregiver pair** (other Active duplicates for that pair are set Inactive first)
 - Pending Care Circle connection requests → Approve / Reject
 - On approve: Meridian `membershipStatus` → **Active** (read-back verified)
 - CareCircle account list (Patient / Family Caregiver); Admin promote only via bootstrap
 - Meridian patients, caregivers, memberships, care plans with status controls
+
+### Sign in
+
+Use the provisioned Admin email/password at `/login` (redirects to `/admin`).
+Public signup cannot create Admin.
 
 ## Auth notes
 

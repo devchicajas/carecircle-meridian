@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +13,11 @@ type ConnectionRow = {
   relationship_type: string;
   created_at: string;
   meridian_membership_business_id?: string | null;
-  patient?: { email: string; name: string; meridianPatientBusinessId?: string | null } | null;
+  patient?: {
+    email: string;
+    name: string;
+    meridianPatientBusinessId?: string | null;
+  } | null;
   caregiver?: {
     email: string;
     name: string;
@@ -32,21 +36,47 @@ type UserRow = {
   meridianCaregiverBusinessId?: string;
 };
 
+type MeridianPerson = {
+  id: string;
+  businessId?: string;
+  name: string;
+  status: string;
+  role?: string;
+};
+
+type MembershipRow = {
+  id: string;
+  businessId?: string;
+  status: string;
+  patientRef?: string;
+  caregiverRef?: string;
+  relationshipType?: string;
+  startDate?: string;
+};
+
 type MeridianSummary = {
-  patients: Array<{ id: string; businessId?: string; name: string; status: string }>;
-  caregivers: Array<{ id: string; businessId?: string; name: string; status: string; role?: string }>;
-  memberships: Array<{
+  patients: MeridianPerson[];
+  caregivers: MeridianPerson[];
+  memberships: MembershipRow[];
+  carePlans: Array<{
     id: string;
     businessId?: string;
     status: string;
     patientRef?: string;
-    caregiverRef?: string;
-    relationshipType?: string;
   }>;
-  carePlans: Array<{ id: string; businessId?: string; status: string; patientRef?: string }>;
   connected?: boolean;
   loadingError?: string;
 };
+
+const RELATIONSHIPS = [
+  "Parent",
+  "Child",
+  "Spouse",
+  "Sibling",
+  "Family Member",
+  "Friend",
+  "Other",
+];
 
 export function AdminDashboard({ locale = "en" }: { locale?: "en" | "es" }) {
   const [requests, setRequests] = useState<ConnectionRow[]>([]);
@@ -56,6 +86,30 @@ export function AdminDashboard({ locale = "en" }: { locale?: "en" | "es" }) {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [membershipFilter, setMembershipFilter] = useState("");
+  const [createForm, setCreateForm] = useState({
+    patientRef: "",
+    caregiverRef: "",
+    relationshipType: "Family Member",
+    membershipStatus: "Active" as "Active" | "Inactive",
+  });
+
+  const labelFor = useCallback(
+    (ref?: string) => {
+      if (!ref || !meridian) return ref || "—";
+      const patient = meridian.patients.find(
+        (p) => p.id === ref || p.businessId === ref,
+      );
+      if (patient) return `${patient.name} (${patient.businessId || patient.id})`;
+      const caregiver = meridian.caregivers.find(
+        (c) => c.id === ref || c.businessId === ref,
+      );
+      if (caregiver) {
+        return `${caregiver.name} (${caregiver.businessId || caregiver.id})`;
+      }
+      return ref;
+    },
+    [meridian],
+  );
 
   const load = useCallback(async () => {
     setError(null);
@@ -112,10 +166,7 @@ export function AdminDashboard({ locale = "en" }: { locale?: "en" | "es" }) {
     }
   }
 
-  async function setMembershipStatus(
-    membershipId: string,
-    membershipStatus: "Active" | "Inactive",
-  ) {
+  async function improveMembership(body: Record<string, unknown>) {
     setPending(true);
     setError(null);
     setNote(null);
@@ -123,16 +174,19 @@ export function AdminDashboard({ locale = "en" }: { locale?: "en" | "es" }) {
       const res = await fetch("/api/admin/meridian", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ membershipId, membershipStatus }),
+        body: JSON.stringify({ action: "improve", ...body }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Meridian update failed");
       setNote(
-        `Membership ${data.membership?.businessId || membershipId} → ${data.membership?.status}`,
+        data.note ||
+          `Membership ${data.membership?.businessId || data.membership?.id} → ${data.membership?.status}`,
       );
       await load();
+      return data;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Update failed");
+      return null;
     } finally {
       setPending(false);
     }
@@ -160,17 +214,28 @@ export function AdminDashboard({ locale = "en" }: { locale?: "en" | "es" }) {
     }
   }
 
-  const filteredMemberships =
-    meridian?.memberships.filter((m) => {
-      if (!membershipFilter.trim()) return true;
-      const q = membershipFilter.toLowerCase();
+  const filteredMemberships = useMemo(() => {
+    const rows = meridian?.memberships || [];
+    if (!membershipFilter.trim()) return rows;
+    const q = membershipFilter.toLowerCase();
+    return rows.filter((m) => {
+      const patientLabel = labelFor(m.patientRef).toLowerCase();
+      const caregiverLabel = labelFor(m.caregiverRef).toLowerCase();
       return (
         m.businessId?.toLowerCase().includes(q) ||
         m.patientRef?.toLowerCase().includes(q) ||
         m.caregiverRef?.toLowerCase().includes(q) ||
-        m.status?.toLowerCase().includes(q)
+        m.status?.toLowerCase().includes(q) ||
+        patientLabel.includes(q) ||
+        caregiverLabel.includes(q)
       );
-    }) || [];
+    });
+  }, [meridian, membershipFilter, labelFor]);
+
+  const activeCount =
+    meridian?.memberships.filter((m) => /^active$/i.test(m.status || ""))
+      .length || 0;
+  const inactiveCount = (meridian?.memberships.length || 0) - activeCount;
 
   return (
     <div className="space-y-6">
@@ -184,6 +249,230 @@ export function AdminDashboard({ locale = "en" }: { locale?: "en" | "es" }) {
           {note}
         </p>
       ) : null}
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs uppercase tracking-wide text-ink-500">
+              Pending requests
+            </p>
+            <p className="mt-1 text-2xl font-semibold">{requests.length}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs uppercase tracking-wide text-ink-500">
+              Active memberships
+            </p>
+            <p className="mt-1 text-2xl font-semibold text-matcha-800">
+              {activeCount}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs uppercase tracking-wide text-ink-500">
+              Inactive memberships
+            </p>
+            <p className="mt-1 text-2xl font-semibold">{inactiveCount}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="border-matcha-200">
+        <CardHeader>
+          <CardTitle>
+            {locale === "es"
+              ? "Mejorar / crear membresía Meridian"
+              : "Improve / create Meridian membership"}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-ink-600">
+            Link a Patient + Caregiver, set relationship, and activate. Only one{" "}
+            <strong>Active</strong> membership is allowed per pair — activating
+            here deactivates duplicate Active rows for that pair, then verifies
+            Meridian read-back.
+          </p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="block space-y-1 text-sm">
+              <span>Patient</span>
+              <select
+                className="h-11 w-full rounded-2xl border border-ink-100 bg-white px-3"
+                value={createForm.patientRef}
+                onChange={(e) =>
+                  setCreateForm({ ...createForm, patientRef: e.target.value })
+                }
+              >
+                <option value="">Select patient…</option>
+                {(meridian?.patients || []).map((p) => (
+                  <option key={p.id} value={p.businessId || p.id}>
+                    {p.name} ({p.businessId || p.id})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block space-y-1 text-sm">
+              <span>Caregiver</span>
+              <select
+                className="h-11 w-full rounded-2xl border border-ink-100 bg-white px-3"
+                value={createForm.caregiverRef}
+                onChange={(e) =>
+                  setCreateForm({ ...createForm, caregiverRef: e.target.value })
+                }
+              >
+                <option value="">Select caregiver…</option>
+                {(meridian?.caregivers || []).map((c) => (
+                  <option key={c.id} value={c.businessId || c.id}>
+                    {c.name} ({c.businessId || c.id})
+                    {c.role ? ` · ${c.role}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block space-y-1 text-sm">
+              <span>Relationship</span>
+              <select
+                className="h-11 w-full rounded-2xl border border-ink-100 bg-white px-3"
+                value={createForm.relationshipType}
+                onChange={(e) =>
+                  setCreateForm({
+                    ...createForm,
+                    relationshipType: e.target.value,
+                  })
+                }
+              >
+                {RELATIONSHIPS.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block space-y-1 text-sm">
+              <span>Target status</span>
+              <select
+                className="h-11 w-full rounded-2xl border border-ink-100 bg-white px-3"
+                value={createForm.membershipStatus}
+                onChange={(e) =>
+                  setCreateForm({
+                    ...createForm,
+                    membershipStatus: e.target.value as "Active" | "Inactive",
+                  })
+                }
+              >
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </label>
+          </div>
+          <Button
+            type="button"
+            disabled={
+              pending || !createForm.patientRef || !createForm.caregiverRef
+            }
+            onClick={() =>
+              improveMembership({
+                patientRef: createForm.patientRef,
+                caregiverRef: createForm.caregiverRef,
+                relationshipType: createForm.relationshipType,
+                membershipStatus: createForm.membershipStatus,
+              })
+            }
+          >
+            {pending
+              ? "Saving to Meridian…"
+              : locale === "es"
+                ? "Guardar membresía en Meridian"
+                : "Save membership to Meridian"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+          <CardTitle>
+            Care Circle Memberships ({meridian?.memberships.length ?? 0})
+          </CardTitle>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pending}
+            onClick={() => load()}
+          >
+            Refresh
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Input
+            placeholder="Filter by patient, caregiver, status, id…"
+            value={membershipFilter}
+            onChange={(e) => setMembershipFilter(e.target.value)}
+          />
+          <div className="max-h-[28rem] space-y-2 overflow-auto">
+            {filteredMemberships.length === 0 ? (
+              <p className="text-sm text-ink-500">No memberships match.</p>
+            ) : (
+              filteredMemberships.map((m) => {
+                const active = /^active$/i.test(m.status || "");
+                return (
+                  <div
+                    key={m.id}
+                    className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-ink-50 bg-white/80 p-3 text-sm"
+                  >
+                    <div className="min-w-[16rem] flex-1">
+                      <p className="font-medium">{m.businessId || m.id}</p>
+                      <p className="text-ink-700">
+                        Patient: {labelFor(m.patientRef)}
+                      </p>
+                      <p className="text-ink-700">
+                        Caregiver: {labelFor(m.caregiverRef)}
+                      </p>
+                      <p className="text-xs text-ink-500">
+                        {m.relationshipType || "—"}
+                        {m.startDate ? ` · since ${m.startDate}` : ""}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant={active ? "matcha" : "outline"}>
+                        {m.status}
+                      </Badge>
+                      {active ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={pending}
+                          onClick={() =>
+                            improveMembership({
+                              membershipId: m.id,
+                              membershipStatus: "Inactive",
+                            })
+                          }
+                        >
+                          Set Inactive
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          disabled={pending}
+                          onClick={() =>
+                            improveMembership({
+                              membershipId: m.id,
+                              membershipStatus: "Active",
+                            })
+                          }
+                        >
+                          Set Active
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -244,13 +533,10 @@ export function AdminDashboard({ locale = "en" }: { locale?: "en" | "es" }) {
       </Card>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2">
+        <CardHeader>
           <CardTitle>
             {locale === "es" ? "Cuentas CareCircle" : "CareCircle accounts"}
           </CardTitle>
-          <Button size="sm" variant="outline" disabled={pending} onClick={() => load()}>
-            Refresh
-          </Button>
         </CardHeader>
         <CardContent className="space-y-2">
           {users.map((u) => (
@@ -384,64 +670,6 @@ export function AdminDashboard({ locale = "en" }: { locale?: "en" | "es" }) {
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            Care Circle Memberships ({meridian?.memberships.length ?? 0})
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Input
-            placeholder="Filter by patient, caregiver, status…"
-            value={membershipFilter}
-            onChange={(e) => setMembershipFilter(e.target.value)}
-          />
-          <div className="max-h-80 space-y-2 overflow-auto">
-            {filteredMemberships.map((m) => (
-              <div
-                key={m.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-ink-50 p-3 text-sm"
-              >
-                <div>
-                  <p className="font-medium">{m.businessId || m.id}</p>
-                  <p className="text-xs text-ink-500">
-                    {m.patientRef} · {m.caregiverRef} ·{" "}
-                    {m.relationshipType || "—"}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge
-                    variant={
-                      /^active$/i.test(m.status || "") ? "matcha" : "outline"
-                    }
-                  >
-                    {m.status}
-                  </Badge>
-                  {/^active$/i.test(m.status || "") ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={pending}
-                      onClick={() => setMembershipStatus(m.id, "Inactive")}
-                    >
-                      Set Inactive
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      disabled={pending}
-                      onClick={() => setMembershipStatus(m.id, "Active")}
-                    >
-                      Set Active
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

@@ -127,6 +127,11 @@ export function CredentialsLoginForm({ locale }: { locale: "en" | "es" }) {
           {locale === "es" ? "Crear cuenta" : "Create an account"}
         </Link>
       </p>
+      <p className="text-center text-xs text-ink-400">
+        {locale === "es"
+          ? "Las cuentas Admin no se crean por registro público."
+          : "Admin accounts are not created through public signup."}
+      </p>
     </form>
   );
 }

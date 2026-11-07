@@ -1,9 +1,9 @@
 import { requireAdminUser, privateJson } from "@/lib/auth";
-import { loadCareSnapshot } from "@/lib/meridian/care-data";
 import {
+  loadCareSnapshot,
+  improveMembership,
+  listMembershipsForPair,
   updateMembershipStatus,
-  createMembershipRecord,
-  findMembershipForPair,
 } from "@/lib/meridian/care-data";
 import { PlatformSDKError } from "@/lib/sdk/platformSDK";
 import { isActiveStatus } from "@/lib/utils";
@@ -16,6 +16,15 @@ export async function GET(request: Request) {
   if (admin instanceof Response) return admin;
 
   const snap = await loadCareSnapshot();
+  const url = new URL(request.url);
+  const patientRef = url.searchParams.get("patientRef") || undefined;
+  const caregiverRef = url.searchParams.get("caregiverRef") || undefined;
+
+  let pairMemberships = null;
+  if (patientRef && caregiverRef) {
+    pairMemberships = await listMembershipsForPair({ patientRef, caregiverRef });
+  }
+
   return privateJson({
     source: snap.source,
     connected: snap.connected,
@@ -27,28 +36,45 @@ export async function GET(request: Request) {
     memberships: snap.memberships,
     carePlans: snap.carePlans,
     metrics: snap.metrics,
+    pairMemberships,
   });
 }
 
-/** Admin membership activation / deactivation with Meridian read-back. */
+/**
+ * Admin membership management:
+ * - { membershipId, membershipStatus } → activate/deactivate (Active is exclusive per pair)
+ * - { patientRef, caregiverRef, relationshipType?, membershipStatus? } → create/improve
+ * - { action: "improve", ... } → same as create/improve helper
+ */
 export async function PATCH(request: Request) {
   const admin = await requireAdminUser(request);
   if (admin instanceof Response) return admin;
 
   const body = (await request.json().catch(() => ({}))) as {
+    action?: "improve" | "set_status";
     membershipId?: string;
     membershipStatus?: "Active" | "Inactive";
     patientRef?: string;
     caregiverRef?: string;
     relationshipType?: string;
+    exclusiveActive?: boolean;
   };
 
   try {
-    if (body.membershipId && body.membershipStatus) {
-      const membership = await updateMembershipStatus(
-        body.membershipId,
-        body.membershipStatus,
-      );
+    // Preferred path: improve / create+activate
+    if (
+      body.action === "improve" ||
+      (body.patientRef && body.caregiverRef) ||
+      (body.membershipId && body.membershipStatus && body.exclusiveActive !== false)
+    ) {
+      const membership = await improveMembership({
+        membershipId: body.membershipId,
+        patientRef: body.patientRef,
+        caregiverRef: body.caregiverRef,
+        relationshipType: body.relationshipType,
+        membershipStatus: body.membershipStatus || "Active",
+      });
+
       if (
         body.membershipStatus === "Active" &&
         !isActiveStatus(membership.status)
@@ -61,31 +87,39 @@ export async function PATCH(request: Request) {
           { status: 502 },
         );
       }
-      return privateJson({ ok: true, membership });
+
+      const siblings =
+        membership.patientRef && membership.caregiverRef
+          ? await listMembershipsForPair({
+              patientRef: membership.patientRef,
+              caregiverRef: membership.caregiverRef,
+            })
+          : [];
+
+      return privateJson({
+        ok: true,
+        membership,
+        siblings,
+        note: isActiveStatus(membership.status)
+          ? "Membership is Active in Meridian. The caregiver should see this patient under My Loved Ones."
+          : "Membership is Inactive in Meridian.",
+      });
     }
 
-    if (body.patientRef && body.caregiverRef) {
-      let membership = await findMembershipForPair({
-        patientRef: body.patientRef,
-        caregiverRef: body.caregiverRef,
-      });
-      if (!membership) {
-        membership = await createMembershipRecord({
-          patient: body.patientRef,
-          caregiver: body.caregiverRef,
-          relationshipType: body.relationshipType || "Family Member",
-          membershipStatus: "Inactive",
-          startDate: new Date().toISOString().slice(0, 10),
-        });
-      }
-      if (body.membershipStatus === "Active") {
-        membership = await updateMembershipStatus(membership.id, "Active");
-      }
+    if (body.membershipId && body.membershipStatus) {
+      const membership = await updateMembershipStatus(
+        body.membershipId,
+        body.membershipStatus,
+        { exclusiveActive: body.membershipStatus === "Active" },
+      );
       return privateJson({ ok: true, membership });
     }
 
     return privateJson(
-      { error: "Provide membershipId + membershipStatus, or patient/caregiver refs." },
+      {
+        error:
+          "Provide membershipId + membershipStatus, or patientRef + caregiverRef to improve a membership.",
+      },
       { status: 400 },
     );
   } catch (err) {

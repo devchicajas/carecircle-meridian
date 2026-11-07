@@ -80,7 +80,11 @@ export default async function AccountPage() {
                   <Link href="/onboarding">{t.onboarding}</Link>
                 </Button>
               ) : null}
-              {user.accountType === "patient" ? (
+              {user.accountType === "admin" ? (
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/admin">Admin dashboard</Link>
+                </Button>
+              ) : user.accountType === "patient" ? (
                 <Button asChild size="sm" variant="outline">
                   <Link href="/portal/patient">Patient portal</Link>
                 </Button>

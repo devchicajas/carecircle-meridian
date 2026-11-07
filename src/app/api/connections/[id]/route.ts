@@ -4,10 +4,8 @@ import {
   findConnectionById,
 } from "@/lib/auth/connections";
 import {
-  createMembershipRecord,
-  findMembershipForPair,
+  improveMembership,
   loadCareSnapshot,
-  updateMembershipStatus,
 } from "@/lib/meridian/care-data";
 import { inviteMessagesBoth } from "@/lib/i18n/invite-messages";
 import { PlatformSDKError } from "@/lib/sdk/platformSDK";
@@ -77,7 +75,7 @@ export async function PATCH(
     return privateJson({ ok: true, request: updated });
   }
 
-  // Approve → ensure Meridian membership is Active, then mark request approved.
+  // Approve → ensure Meridian membership is Active (exclusive per pair).
   try {
     const patientRef =
       connection.meridian_patient_business_id ||
@@ -86,25 +84,13 @@ export async function PATCH(
       connection.meridian_caregiver_business_id ||
       connection.meridian_caregiver_id;
 
-    let membership =
-      (await findMembershipForPair({
-        patientRef,
-        caregiverRef,
-      })) || null;
-
-    if (!membership) {
-      membership = await createMembershipRecord({
-        patient: patientRef,
-        caregiver: caregiverRef,
-        relationshipType: connection.relationship_type,
-        membershipStatus: "Inactive",
-        startDate: new Date().toISOString().slice(0, 10),
-      });
-    }
-
-    if (!isActiveStatus(membership.status)) {
-      membership = await updateMembershipStatus(membership.id, "Active");
-    }
+    const membership = await improveMembership({
+      membershipId: connection.meridian_membership_id || undefined,
+      patientRef,
+      caregiverRef,
+      relationshipType: connection.relationship_type,
+      membershipStatus: "Active",
+    });
 
     if (!isActiveStatus(membership.status)) {
       return privateJson(
@@ -124,17 +110,11 @@ export async function PATCH(
       meridianMembershipBusinessId: membership.businessId,
     });
 
-    // Read-back confirmation
-    const confirmed = await findMembershipForPair({
-      patientRef,
-      caregiverRef,
-    });
-
     return privateJson({
       ok: true,
       ...inviteMessagesBoth("approved"),
       request: updated,
-      membership: confirmed,
+      membership,
     });
   } catch (err) {
     if (err instanceof PlatformSDKError) {
