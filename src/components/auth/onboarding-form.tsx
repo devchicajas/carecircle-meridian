@@ -2,36 +2,57 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 export function OnboardingForm({
   locale,
   accountType,
+  email,
+  initial,
 }: {
   locale: "en" | "es";
   accountType: string;
+  email: string;
+  initial: {
+    firstName: string;
+    lastName: string;
+    preferredLanguage: string;
+  };
 }) {
   const router = useRouter();
+  const { update } = useSession();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [linkId, setLinkId] = useState("");
+  const [hint, setHint] = useState<string | null>(null);
+  const [stuck, setStuck] = useState(false);
+  const [form, setForm] = useState({
+    firstName: initial.firstName,
+    lastName: initial.lastName,
+    preferredName: "",
+    preferredLanguage: initial.preferredLanguage,
+    phoneNumber: "",
+  });
 
-  async function complete(mode: "create" | "link") {
+  async function submit(linkByExactEmail: boolean) {
     setPending(true);
     setError(null);
+    setHint(null);
     try {
       const res = await fetch("/api/account/onboard", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          mode === "link" && linkId ? { linkExistingId: linkId } : {},
-        ),
+        body: JSON.stringify({ ...form, linkByExactEmail }),
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data?.error || `Onboarding failed (${res.status})`);
+        setStuck(data?.code === "MERIDIAN_ID_SEQUENCE_STUCK");
+        setHint(data?.hint || null);
+        throw new Error(data?.error || data?.code || `Failed (${res.status})`);
       }
-      router.push(accountType === "patient" ? "/portal/patient" : "/");
+      await update();
+      router.push(data.redirectTo || "/");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Onboarding failed");
@@ -41,57 +62,104 @@ export function OnboardingForm({
   }
 
   return (
-    <div className="space-y-4">
-      <ol className="list-decimal space-y-2 pl-5 text-sm text-ink-700">
-        <li>{locale === "es" ? "Bienvenida a CareCircle" : "Welcome to CareCircle"}</li>
-        <li>
-          {locale === "es" ? "Tipo de cuenta confirmado" : "Account type confirmed"}:{" "}
-          <strong>{accountType}</strong>
-        </li>
-        <li>
-          {locale === "es"
-            ? "Crear o vincular tu registro Meridian autorizado"
-            : "Create or link your authorized Meridian record"}
-        </li>
-        <li>
-          {locale === "es"
-            ? "Las membresías del círculo requieren aprobación — no se otorgan automáticamente"
-            : "Care-circle memberships require approval — not granted automatically"}
-        </li>
-      </ol>
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit(false);
+      }}
+      className="space-y-4"
+    >
+      <p className="rounded-2xl bg-cream p-3 text-sm text-ink-700">
+        {locale === "es"
+          ? `Cuenta ${accountType} · ${email}. Crearemos tu perfil en Meridian. No puedes autoasignarte Coordinador/Admin.`
+          : `Account ${accountType} · ${email}. We’ll create your profile in Meridian. You cannot self-assign Coordinator/Admin.`}
+      </p>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="space-y-1 text-sm">
+          <span>First Name *</span>
+          <Input
+            required
+            value={form.firstName}
+            onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+          />
+        </label>
+        <label className="space-y-1 text-sm">
+          <span>Last Name *</span>
+          <Input
+            required
+            value={form.lastName}
+            onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+          />
+        </label>
+      </div>
 
       <label className="block space-y-1 text-sm">
-        <span>
-          {locale === "es"
-            ? "Vincular ID existente (opcional, email debe coincidir)"
-            : "Link existing Meridian ID (optional; email must match)"}
-        </span>
-        <input
-          className="h-11 w-full rounded-2xl border border-ink-100 bg-white px-3"
-          placeholder="PAT-001 or CG-001"
-          value={linkId}
-          onChange={(e) => setLinkId(e.target.value)}
+        <span>Preferred Name</span>
+        <Input
+          value={form.preferredName}
+          onChange={(e) => setForm({ ...form, preferredName: e.target.value })}
         />
       </label>
 
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      <label className="block space-y-1 text-sm">
+        <span>Phone (optional)</span>
+        <Input
+          placeholder="555-010-1234"
+          value={form.phoneNumber}
+          onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })}
+        />
+      </label>
 
-      <div className="flex flex-wrap gap-2">
-        <Button disabled={pending} onClick={() => complete("create")}>
-          {pending
-            ? "…"
-            : locale === "es"
-              ? "Crear registro Meridian"
-              : "Create Meridian record"}
-        </Button>
-        <Button
-          variant="outline"
-          disabled={pending || !linkId}
-          onClick={() => complete("link")}
+      <label className="block space-y-1 text-sm">
+        <span>Preferred Language</span>
+        <select
+          className="h-11 w-full rounded-2xl border border-ink-100 bg-white px-3"
+          value={form.preferredLanguage}
+          onChange={(e) =>
+            setForm({ ...form, preferredLanguage: e.target.value })
+          }
         >
-          {locale === "es" ? "Vincular existente" : "Link existing"}
+          <option value="English">English</option>
+          <option value="Spanish">Spanish</option>
+        </select>
+      </label>
+
+      {error ? (
+        <div className="space-y-2 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <p className="font-medium">
+            {locale === "es"
+              ? "Meridian no guardó el perfil (error real)"
+              : "Meridian did not save the profile (real error)"}
+          </p>
+          <p>{error}</p>
+          {hint ? <p className="text-xs text-red-600">{hint}</p> : null}
+        </div>
+      ) : null}
+
+      <Button type="submit" className="w-full" size="lg" disabled={pending}>
+        {pending
+          ? locale === "es"
+            ? "Guardando en Meridian…"
+            : "Saving to Meridian…"
+          : locale === "es"
+            ? "Crear perfil en Meridian"
+            : "Create profile in Meridian"}
+      </Button>
+
+      {stuck ? (
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          disabled={pending}
+          onClick={() => void submit(true)}
+        >
+          {locale === "es"
+            ? "Vincular perfil Meridian por email exacto"
+            : "Link Meridian profile by exact email"}
         </Button>
-      </div>
-    </div>
+      ) : null}
+    </form>
   );
 }

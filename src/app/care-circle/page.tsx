@@ -25,13 +25,8 @@ export default async function CareCirclePage() {
     <AppShell
       locale={locale}
       sourceLabel={snapshot.source === "meridian" ? "Meridian" : "Unavailable"}
-      viewerName={
-        viewer.verified
-          ? viewer.simulated
-            ? `${viewer.name} (simulated)`
-            : viewer.name
-          : undefined
-      }
+            viewerName={viewer.verified ? viewer.name : undefined}
+      showLogout={viewer.verified}
     >
       <div className="space-y-6 animate-fadeUp">
         <div>

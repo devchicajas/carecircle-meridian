@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { signOut } from "next-auth/react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
@@ -9,18 +9,11 @@ export function LogoutButton({
 }: {
   label?: string;
 }) {
-  const router = useRouter();
   const [pending, setPending] = useState(false);
 
   async function onClick() {
     setPending(true);
-    try {
-      await fetch("/api/account", { method: "DELETE" });
-      router.push("/login");
-      router.refresh();
-    } finally {
-      setPending(false);
-    }
+    await signOut({ callbackUrl: "/login" });
   }
 
   return (

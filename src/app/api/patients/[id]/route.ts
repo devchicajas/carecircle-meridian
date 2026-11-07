@@ -19,7 +19,7 @@ export async function GET(
   }
   return privateJson({
     ...result,
-    viewer: { sub: identity.sub, name: identity.name, kind: identity.kind },
+    viewer: { id: identity.id, name: identity.name, email: identity.email },
   });
 }
 

@@ -1,29 +1,59 @@
 import { NextResponse } from "next/server";
-import {
-  getIdentity,
-  requireIdentity,
-  requireTeamRole,
-  type Identity,
-} from "../../cursor/identity";
+import { auth } from "@/auth";
+import { findUserById, toPublicUser } from "@/lib/auth/db";
 
-export { getIdentity, requireIdentity, requireTeamRole };
-export type { Identity };
+export type AppSessionUser = {
+  id: string;
+  email: string;
+  name: string;
+  firstName: string;
+  lastName: string;
+  preferredLanguage: "English" | "Spanish";
+  accountType: "patient" | "family_caregiver";
+  role: "patient" | "family_caregiver";
+  onboarded: boolean;
+  meridianPatientId?: string;
+  meridianPatientBusinessId?: string;
+  meridianCaregiverId?: string;
+  meridianCaregiverBusinessId?: string;
+};
 
-const READ_ROLES = ["admin", "member", "service"] as const;
-
-/** Require a signed-in Cursor viewer (or simulated local viewer). */
-export async function requireAppUser(request: Request) {
-  const identity = await requireIdentity(request);
-  if (identity instanceof Response) return identity;
-  const reader = requireTeamRole(identity, [...READ_ROLES]);
-  if (reader instanceof Response) {
-    // Private-app viewers may have no teamRole — admit verified people.
-    if (identity.kind === "person" && identity.verified) {
-      return identity;
-    }
-    return reader;
+/** Require a signed-in CareCircle user (Auth.js credentials session). */
+export async function requireAppUser(_request?: Request) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json(
+      {
+        error: "Authentication required. Please log in.",
+        code: "UNAUTHENTICATED",
+      },
+      { status: 401 },
+    );
   }
-  return reader;
+  const row = findUserById(session.user.id);
+  if (!row) {
+    return NextResponse.json(
+      { error: "Account not found.", code: "USER_NOT_FOUND" },
+      { status: 401 },
+    );
+  }
+  const pub = toPublicUser(row);
+  const user: AppSessionUser = {
+    id: pub.id,
+    email: pub.email,
+    name: `${pub.firstName} ${pub.lastName}`.trim(),
+    firstName: pub.firstName,
+    lastName: pub.lastName,
+    preferredLanguage: pub.preferredLanguage,
+    accountType: pub.accountType,
+    role: pub.role,
+    onboarded: pub.onboarded,
+    meridianPatientId: pub.meridianPatientId,
+    meridianPatientBusinessId: pub.meridianPatientBusinessId,
+    meridianCaregiverId: pub.meridianCaregiverId,
+    meridianCaregiverBusinessId: pub.meridianCaregiverBusinessId,
+  };
+  return user;
 }
 
 export function privateJson(data: unknown, init: ResponseInit = {}) {
@@ -32,6 +62,9 @@ export function privateJson(data: unknown, init: ResponseInit = {}) {
   return NextResponse.json(data, { ...init, headers });
 }
 
-export async function getViewerFromHeaders(headerList: Headers) {
-  return getIdentity(headerList);
+export async function getSessionUser() {
+  const session = await auth();
+  if (!session?.user?.id) return null;
+  const row = findUserById(session.user.id);
+  return row ? toPublicUser(row) : null;
 }

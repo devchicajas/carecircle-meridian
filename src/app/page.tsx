@@ -41,13 +41,8 @@ export default async function DashboardPage() {
   return (
     <AppShell
       sourceLabel={snapshot.source === "meridian" ? "Meridian" : "Unavailable"}
-      viewerName={
-        viewer.verified
-          ? viewer.simulated
-            ? `${viewer.name} (simulated)`
-            : viewer.name
-          : undefined
-      }
+      viewerName={viewer.verified ? viewer.name : undefined}
+      showLogout={viewer.verified}
     >
       <div className="space-y-8 animate-fadeUp">
         <section className="grid gap-6 lg:grid-cols-[1.4fr_0.8fr]">
@@ -63,39 +58,50 @@ export default async function DashboardPage() {
               plans organized in one place — powered by live Meridian records.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
-              <Button asChild size="lg">
-                <Link href="/signup">
-                  Sign up · Dummy account
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              </Button>
-              <Button asChild variant="soft" size="lg">
-                <Link href="/demo">60s video guide</Link>
-              </Button>
-              {maria ? (
+              {viewer.verified ? (
+                <Button asChild size="lg">
+                  <Link href="/patients">
+                    Patient directory
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              ) : (
+                <Button asChild size="lg">
+                  <Link href="/signup">
+                    Sign up
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              )}
+              {!viewer.verified ? (
                 <Button asChild variant="outline" size="lg">
+                  <Link href="/login">Log in</Link>
+                </Button>
+              ) : null}
+              {maria ? (
+                <Button asChild variant="soft" size="lg">
                   <Link href={`/patients/${encodeURIComponent(maria.id)}`}>
                     Open María González
                   </Link>
                 </Button>
               ) : null}
               <Button asChild variant="outline" size="lg">
-                <Link href="/patients">Patient directory</Link>
+                <Link href="/tasks">Care tasks</Link>
               </Button>
             </div>
           </div>
 
           <Card className="bg-ink-900 text-white">
             <CardHeader>
-              <CardTitle className="text-white">Hackathon film path</CardTitle>
+              <CardTitle className="text-white">Working path</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-white/80">
-              <p>1. Sign up dummy account → Meridian proof write</p>
-              <p>2. Dashboard “Better Care, Together.”</p>
-              <p>3. María González care journey</p>
-              <p>4. Complete a care task · switch to Español</p>
+              <p>1. Sign up with email + password</p>
+              <p>2. Create Patient / Family Caregiver in Meridian</p>
+              <p>3. Open your dashboard</p>
+              <p>4. Create or update a care record · verify in Meridian</p>
               <p className="pt-2 text-xs text-white/60">
-                Simulation MVP · Live Meridian · fictional data
+                Synthetic data only · Live Meridian backend
               </p>
             </CardContent>
           </Card>

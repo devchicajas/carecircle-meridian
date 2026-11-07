@@ -20,13 +20,12 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { DemoPersonaBadge } from "@/components/care/demo-persona-picker";
 import { LanguageSwitcher } from "@/components/i18n/language-switcher";
+import { LogoutButton } from "@/components/auth/logout-button";
 import type { Locale } from "@/lib/i18n/dictionary";
 
 const nav = [
   { href: "/signup", label: "Sign Up", es: "Registro", icon: LogIn },
-  { href: "/demo", label: "60s Demo", es: "Demo 60s", icon: Sparkles },
   { href: "/", label: "Dashboard", es: "Panel", icon: LayoutDashboard },
   { href: "/patients", label: "Patients", es: "Pacientes", icon: Users },
   { href: "/caregivers", label: "Caregivers", es: "Cuidadores", icon: UserRound },
@@ -45,11 +44,13 @@ export function AppShell({
   sourceLabel,
   viewerName,
   locale: localeProp = "en",
+  showLogout = false,
 }: {
   children: React.ReactNode;
   sourceLabel?: string;
   viewerName?: string;
   locale?: Locale;
+  showLogout?: boolean;
 }) {
   const pathname = usePathname();
   const [locale, setLocale] = useState<Locale>(localeProp);
@@ -97,7 +98,6 @@ export function AppShell({
 
           <div className="flex flex-wrap items-center justify-end gap-2">
             <LanguageSwitcher locale={locale} />
-            <DemoPersonaBadge />
             {viewerName ? (
               <Badge variant="outline">{viewerName}</Badge>
             ) : null}
@@ -107,6 +107,9 @@ export function AppShell({
                   ? "Live Meridian"
                   : "Meridian unavailable"}
               </Badge>
+            ) : null}
+            {showLogout || viewerName ? (
+              <LogoutButton label={locale === "es" ? "Salir" : "Log out"} />
             ) : null}
           </div>
         </div>
@@ -131,14 +134,6 @@ export function AppShell({
               >
                 <Icon className="h-4 w-4" />
                 <span>{locale === "es" ? item.es : item.label}</span>
-                <span
-                  className={cn(
-                    "hidden text-xs lg:inline",
-                    active ? "text-white/70" : "text-ink-400",
-                  )}
-                >
-                  / {locale === "es" ? item.label : item.es}
-                </span>
               </Link>
             );
           })}

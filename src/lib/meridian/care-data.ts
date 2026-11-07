@@ -1077,6 +1077,40 @@ export async function updateAppointmentRecord(
   return normalizeAppointment(await readBack(MERIDIAN_OBJECTS.appointment, id));
 }
 
+export async function createMedicationRecord(values: {
+  patient: string;
+  medicationName: string;
+  instructions?: string;
+  frequency?: string;
+  refillDate?: string;
+  status?: string;
+}) {
+  const sdk = requireMeridianSdk();
+  if (!values.medicationName?.trim()) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "MEDICATION_NAME_REQUIRED",
+      detail: "Medication name is required.",
+    });
+  }
+  const created = await sdk.createRecord(
+    MERIDIAN_OBJECTS.medication,
+    {
+      patient: values.patient,
+      medicationName: values.medicationName,
+      instructions: values.instructions,
+      frequency: values.frequency,
+      refillDate: values.refillDate,
+      status: values.status || "Active",
+    },
+    "CareCircle: create medication",
+  );
+  const id = recordEnvelopeId(created as Record<string, unknown>);
+  return normalizeMedication(
+    await readBack(MERIDIAN_OBJECTS.medication, id),
+  );
+}
+
 export async function createMembershipRecord(values: {
   patient: string;
   caregiver: string;

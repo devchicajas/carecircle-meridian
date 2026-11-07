@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     warnings: snapshot.warnings,
     authError: snapshot.authError,
     patients: snapshot.patients,
-    viewer: { sub: identity.sub, name: identity.name, kind: identity.kind },
+    viewer: { id: identity.id, name: identity.name, email: identity.email },
   });
 }
 

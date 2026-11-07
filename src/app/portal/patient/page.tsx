@@ -4,7 +4,7 @@ import { MetricCard } from "@/components/care/metric-card";
 import { TaskRow } from "@/components/care/task-row";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { getAccountProfile } from "@/lib/account/session";
+import { getSessionUser } from "@/lib/auth";
 import {
   loadCareSnapshot,
   resolveCaregiverLabel,
@@ -14,6 +14,7 @@ import { getPageViewer } from "@/lib/viewer";
 import { getServerLocale } from "@/lib/i18n/locale";
 import { getDictionary } from "@/lib/i18n/dictionary";
 import { CalendarDays, ClipboardList, HeartPulse, Bell } from "lucide-react";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -21,13 +22,12 @@ export default async function PatientPortalPage() {
   const locale = await getServerLocale();
   const t = getDictionary(locale);
   const viewer = await getPageViewer();
-  const profile = await getAccountProfile();
+  const profile = await getSessionUser();
+  if (!profile) redirect("/login");
   const snapshot = await loadCareSnapshot();
 
   const patientId =
-    profile?.meridianPatientBusinessId ||
-    profile?.meridianPatientId ||
-    snapshot.patients.find((p) => /mar[ií]a/i.test(p.name))?.businessId;
+    profile.meridianPatientBusinessId || profile.meridianPatientId;
 
   const patient = snapshot.patients.find(
     (p) => p.businessId === patientId || p.id === patientId,
@@ -75,10 +75,11 @@ export default async function PatientPortalPage() {
           <p className="mt-2 text-ink-600">
             Care status: <strong>{patient?.status || "—"}</strong>
           </p>
-          {!profile?.meridianPatientId ? (
+          {!profile.meridianPatientId ? (
             <p className="mt-2 text-xs text-ink-500">
-              Showing María González demo filter until your Patient record is
-              linked via onboarding.
+              {locale === "es"
+                ? "Completa el onboarding de paciente para ver tus registros Meridian."
+                : "Complete patient onboarding to see your Meridian records."}
             </p>
           ) : null}
         </div>

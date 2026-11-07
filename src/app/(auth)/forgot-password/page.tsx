@@ -15,15 +15,10 @@ export default async function ForgotPasswordPage() {
       <div className="space-y-4 text-sm text-ink-700">
         <p>
           {locale === "es"
-            ? "CareCircle no almacena contraseñas y Meridian no expone restablecimiento para este frontend. En esta implementación, el acceso verificado es vía Cursor Identity."
-            : "CareCircle does not store passwords, and Meridian does not expose password reset for this frontend. In this implementation, verified access is via Cursor Identity."}
+            ? "El restablecimiento por correo no está habilitado en este entorno demo controlado (sin verificación de email). Crea una cuenta nueva de demostración o contacta a un administrador del tenant."
+            : "Email-based password reset is not enabled in this controlled demo (no email verification). Create a new demo account or contact a tenant administrator."}
         </p>
-        <p className="rounded-2xl border border-ink-100 bg-cream p-3 text-xs">
-          To enable email/password reset, configure a managed IdP (Auth0 or Clerk),
-          bind secrets in Cursor, and wire Auth.js — without inventing Meridian
-          login endpoints or a custom password store.
-        </p>
-        <Button asChild variant="outline" className="w-full">
+        <Button asChild className="w-full">
           <Link href="/login">
             {locale === "es" ? "Volver" : "Back to login"}
           </Link>
