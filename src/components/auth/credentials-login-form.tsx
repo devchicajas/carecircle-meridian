@@ -13,7 +13,7 @@ export function CredentialsLoginForm({ locale }: { locale: "en" | "es" }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
-    email: params.get("email") || "jasmin@example.com",
+    email: params.get("email") || "",
     password: "",
   });
 
@@ -22,21 +22,38 @@ export function CredentialsLoginForm({ locale }: { locale: "en" | "es" }) {
     setPending(true);
     setError(null);
     try {
+      const email = form.email.trim();
+      // Pre-validate so we show a clear error before Auth.js session dance.
+      const check = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password: form.password }),
+      });
+      const checkData = await check.json().catch(() => ({}));
+      if (!check.ok) {
+        throw new Error(
+          checkData?.error ||
+            (locale === "es"
+              ? "Correo o contraseña incorrectos."
+              : "Invalid email or password."),
+        );
+      }
+
       const result = await signIn("credentials", {
-        email: form.email.trim(),
+        email,
         password: form.password,
         redirect: false,
       });
-      if (!result || result.error) {
+
+      if (result?.error && result.error !== "undefined") {
         throw new Error(
           locale === "es"
-            ? "Correo o contraseña incorrectos."
-            : "Invalid email or password.",
+            ? "No se pudo iniciar sesión. Inténtalo de nuevo."
+            : "Could not start your session. Please try again.",
         );
       }
-      const me = await fetch("/api/account");
-      const data = await me.json();
-      router.push(data?.profile?.onboarded ? "/" : "/onboarding");
+
+      router.push(checkData.redirectTo || "/");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
@@ -53,13 +70,13 @@ export function CredentialsLoginForm({ locale }: { locale: "en" | "es" }) {
           type="email"
           required
           autoComplete="email"
-          placeholder="jasmin@example.com"
+          placeholder="you@example.com"
           value={form.email}
           onChange={(e) => setForm({ ...form, email: e.target.value })}
         />
       </label>
       <label className="block space-y-1 text-sm">
-        <span>Password</span>
+        <span>{locale === "es" ? "Contraseña" : "Password"}</span>
         <Input
           type="password"
           required
@@ -81,12 +98,12 @@ export function CredentialsLoginForm({ locale }: { locale: "en" | "es" }) {
             : "Log in"}
       </Button>
       <p className="text-center text-sm text-ink-500">
-        {locale === "es" ? "¿Nuevo aquí?" : "New here?"}{" "}
+        {locale === "es" ? "¿Nuevo en CareCircle?" : "New to CareCircle?"}{" "}
         <Link
           href="/signup"
           className="font-medium text-strawberry-700 underline"
         >
-          {locale === "es" ? "Registrarse" : "Sign up"}
+          {locale === "es" ? "Crear cuenta" : "Create an account"}
         </Link>
       </p>
     </form>

@@ -95,14 +95,11 @@ export async function POST(request: Request) {
     accountType,
   });
 
-  // Client signs in immediately after this response (Auth.js credentials).
   return NextResponse.json(
     {
       user: toPublicUser(user),
       redirectTo: "/onboarding",
       signInRequired: true,
-      note:
-        "Email verification is disabled in this controlled synthetic demo. Email is a login identifier only — not proof of identity for linking existing patient records.",
     },
     { status: 201 },
   );

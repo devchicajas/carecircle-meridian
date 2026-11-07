@@ -21,8 +21,8 @@ export default async function LoginPage() {
       title={t.logIn}
       subtitle={
         locale === "es"
-          ? "Inicia sesión con el correo y la contraseña de tu cuenta CareCircle."
-          : "Sign in with your CareCircle email and password."
+          ? "Bienvenida de nuevo a CareCircle."
+          : "Welcome back to CareCircle."
       }
     >
       <Suspense fallback={<p className="text-sm text-ink-500">Loading…</p>}>

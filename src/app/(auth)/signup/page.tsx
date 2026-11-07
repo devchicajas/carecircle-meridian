@@ -20,8 +20,8 @@ export default async function SignUpPage() {
       title={t.signUp}
       subtitle={
         locale === "es"
-          ? "Crea tu cuenta con correo y contraseña. example.com está permitido. Sin verificación por email en este entorno demo."
-          : "Create your account with email and password. example.com is allowed. No email verification in this demo environment."
+          ? "Crea tu cuenta para organizar el cuidado de tu familia."
+          : "Create your account to organize care for your family."
       }
     >
       <CredentialsSignupForm locale={locale} />

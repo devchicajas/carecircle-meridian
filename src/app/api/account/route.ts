@@ -10,9 +10,6 @@ export async function GET(request: Request) {
   const row = findUserById(user.id);
   return privateJson({
     profile: row ? toPublicUser(row) : null,
-    authMode: "credentials",
-    note:
-      "Email verification disabled for this controlled synthetic demo. Email is a login identifier only.",
   });
 }
 

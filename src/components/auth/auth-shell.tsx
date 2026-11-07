@@ -45,8 +45,7 @@ export function AuthShell({
           ) : null}
           <div className="mt-6">{children}</div>
         </div>
-        <p className="mt-4 text-center text-xs text-ink-500">{t.demoOnly}</p>
-        <p className="mt-1 text-center text-xs text-ink-400">{t.safety}</p>
+        <p className="mt-4 text-center text-xs text-ink-400">{t.safety}</p>
       </div>
     </div>
   );
