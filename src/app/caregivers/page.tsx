@@ -16,17 +16,22 @@ export default async function CaregiversPage() {
   return (
     <AppShell
       sourceLabel={snapshot.source === "meridian" ? "Meridian" : "Unavailable"}
-            viewerName={viewer.verified ? viewer.name : undefined}
+      viewerName={viewer.verified ? viewer.name : undefined}
       showLogout={viewer.verified}
+      accountType={viewer.accountType}
     >
       <div className="space-y-6 animate-fadeUp">
         <div>
           <p className="text-sm font-medium uppercase tracking-[0.18em] text-matcha-700">
-            Caregivers · Cuidadores
+            Care team · Equipo de cuidado
           </p>
           <h1 className="mt-2 text-3xl font-semibold text-ink-900">
-            Care team directory
+            People helping in your circles
           </h1>
+          <p className="mt-2 max-w-2xl text-ink-600">
+            Coordinators and family caregivers from Meridian — not a patient
+            directory.
+          </p>
         </div>
 
         <StatusBanner

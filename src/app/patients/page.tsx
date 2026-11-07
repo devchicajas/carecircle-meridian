@@ -2,8 +2,12 @@ import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
 import { PatientDirectory } from "@/components/care/patient-directory";
 import { StatusBanner } from "@/components/care/status-banner";
+import { EmptyState } from "@/components/care/empty-state";
 import { Button } from "@/components/ui/button";
-import { loadCareSnapshot } from "@/lib/meridian/care-data";
+import {
+  loadCareSnapshot,
+  lovedOnesForCaregiver,
+} from "@/lib/meridian/care-data";
 import { getPageViewer } from "@/lib/viewer";
 
 export const dynamic = "force-dynamic";
@@ -11,30 +15,58 @@ export const dynamic = "force-dynamic";
 export default async function PatientsPage() {
   const viewer = await getPageViewer();
   const snapshot = await loadCareSnapshot();
+  const isCaregiver =
+    viewer.verified && viewer.accountType === "family_caregiver";
+
+  const people = isCaregiver
+    ? lovedOnesForCaregiver(snapshot, [
+        viewer.meridianCaregiverId,
+        viewer.meridianCaregiverBusinessId,
+      ])
+    : viewer.verified && viewer.accountType === "patient"
+      ? snapshot.patients.filter(
+          (p) =>
+            p.id === viewer.meridianPatientId ||
+            p.businessId === viewer.meridianPatientBusinessId,
+        )
+      : [];
 
   return (
     <AppShell
       sourceLabel={snapshot.source === "meridian" ? "Meridian" : "Unavailable"}
-            viewerName={viewer.verified ? viewer.name : undefined}
+      viewerName={viewer.verified ? viewer.name : undefined}
       showLogout={viewer.verified}
+      accountType={viewer.accountType}
     >
       <div className="space-y-6 animate-fadeUp">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <p className="text-sm font-medium uppercase tracking-[0.18em] text-matcha-700">
-              Patient Directory · Directorio de Pacientes
+              {isCaregiver
+                ? "My Loved Ones · Mis seres queridos"
+                : "Care profiles · Perfiles"}
             </p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink-900">
-              Live Meridian patients
+              {isCaregiver
+                ? "People in your Care Circle"
+                : "Your linked care profile"}
             </h1>
             <p className="mt-2 max-w-2xl text-ink-600">
-              Search by name and filter by case status. Profiles open linked care
-              records from the same Meridian tenant.
+              {isCaregiver
+                ? "Family caregivers only see patients they are linked to through Care Circle — not a clinic-wide directory."
+                : "Your Meridian patient profile and related care records."}
             </p>
           </div>
-          <Button asChild>
-            <Link href="/patients/new">New patient / Nuevo</Link>
-          </Button>
+          {isCaregiver ? (
+            <div className="flex flex-wrap gap-2">
+              <Button asChild variant="outline">
+                <Link href="/care-circle">Open Care Circle</Link>
+              </Button>
+              <Button asChild>
+                <Link href="/patients/new">Add loved one</Link>
+              </Button>
+            </div>
+          ) : null}
         </div>
 
         <StatusBanner
@@ -47,7 +79,36 @@ export default async function PatientsPage() {
           taskObject={snapshot.taskObject}
         />
 
-        <PatientDirectory patients={snapshot.patients} />
+        {!viewer.verified ? (
+          <EmptyState
+            title="Sign in required"
+            titleEs="Inicia sesión"
+            detail="Log in as a family caregiver to see your loved ones."
+          />
+        ) : people.length === 0 ? (
+          <EmptyState
+            title={
+              isCaregiver
+                ? "No loved ones linked yet"
+                : "No profile linked yet"
+            }
+            titleEs={
+              isCaregiver
+                ? "Sin seres queridos vinculados"
+                : "Sin perfil vinculado"
+            }
+            detail={
+              isCaregiver
+                ? "When a Care Circle membership connects you to someone, they appear here. You will not see every patient in the Meridian tenant."
+                : "Finish onboarding to link your patient profile."
+            }
+          />
+        ) : (
+          <PatientDirectory
+            patients={people}
+            framing={isCaregiver ? "lovedOnes" : "patients"}
+          />
+        )}
       </div>
     </AppShell>
   );

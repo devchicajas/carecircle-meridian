@@ -9,6 +9,16 @@ export async function getPageViewer() {
       name: undefined as string | undefined,
       email: undefined as string | undefined,
       simulated: false,
+      accountType: undefined as
+        | "patient"
+        | "family_caregiver"
+        | undefined,
+      role: undefined as "patient" | "family_caregiver" | undefined,
+      onboarded: false,
+      meridianCaregiverId: undefined as string | undefined,
+      meridianCaregiverBusinessId: undefined as string | undefined,
+      meridianPatientId: undefined as string | undefined,
+      meridianPatientBusinessId: undefined as string | undefined,
     };
   }
   return {
@@ -19,5 +29,9 @@ export async function getPageViewer() {
     onboarded: user.onboarded,
     accountType: user.accountType,
     role: user.role,
+    meridianCaregiverId: user.meridianCaregiverId,
+    meridianCaregiverBusinessId: user.meridianCaregiverBusinessId,
+    meridianPatientId: user.meridianPatientId,
+    meridianPatientBusinessId: user.meridianPatientBusinessId,
   };
 }

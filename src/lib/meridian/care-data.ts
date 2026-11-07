@@ -582,6 +582,57 @@ export function findMariaGonzalez(patients: Patient[]) {
   );
 }
 
+function matchesCaregiverRef(
+  caregiver: Caregiver,
+  ref?: string,
+) {
+  if (!ref) return false;
+  return (
+    ref === caregiver.id ||
+    ref === caregiver.businessId ||
+    ref.toLowerCase() === caregiver.name.toLowerCase()
+  );
+}
+
+/**
+ * Family caregivers should see people in their care circle — not a tenant-wide
+ * patient directory. Returns [] when no memberships exist yet for this caregiver.
+ */
+export function lovedOnesForCaregiver(
+  snapshot: CareSnapshot,
+  caregiverRefs: Array<string | undefined | null>,
+): Patient[] {
+  const refs = caregiverRefs.filter(Boolean).map(String);
+  if (refs.length === 0) return [];
+
+  const caregiver = snapshot.caregivers.find((c) =>
+    refs.some((ref) => matchesCaregiverRef(c, ref)),
+  );
+  const aliases = new Set(
+    [caregiver?.id, caregiver?.businessId, caregiver?.name, ...refs].filter(
+      Boolean,
+    ) as string[],
+  );
+
+  const patientRefs = new Set(
+    snapshot.memberships
+      .filter((m) => {
+        if (!m.caregiverRef) return false;
+        if (/revoked|inactive|ended/i.test(m.status || "")) return false;
+        if (aliases.has(m.caregiverRef)) return true;
+        return caregiver
+          ? matchesCaregiverRef(caregiver, m.caregiverRef)
+          : false;
+      })
+      .map((m) => m.patientRef)
+      .filter(Boolean) as string[],
+  );
+
+  return snapshot.patients.filter((p) =>
+    [...patientRefs].some((ref) => matchesPatientRef(p, ref)),
+  );
+}
+
 export function resolvePatientLabel(
   patients: Patient[],
   ref?: string,

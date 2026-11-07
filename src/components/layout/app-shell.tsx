@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSession } from "next-auth/react";
 import {
   HeartHandshake,
   LayoutDashboard,
@@ -17,6 +18,7 @@ import {
   LogIn,
   Route,
   CircleUserRound,
+  Heart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -24,19 +26,52 @@ import { LanguageSwitcher } from "@/components/i18n/language-switcher";
 import { LogoutButton } from "@/components/auth/logout-button";
 import type { Locale } from "@/lib/i18n/dictionary";
 
-const nav = [
-  { href: "/signup", label: "Sign Up", es: "Registro", icon: LogIn },
+type NavItem = {
+  href: string;
+  label: string;
+  es: string;
+  icon: typeof LayoutDashboard;
+  /** When set, only show for these account types (or guests if includeGuest). */
+  roles?: Array<"patient" | "family_caregiver">;
+  guestOnly?: boolean;
+  authOnly?: boolean;
+};
+
+const nav: NavItem[] = [
+  { href: "/signup", label: "Sign Up", es: "Registro", icon: LogIn, guestOnly: true },
   { href: "/", label: "Dashboard", es: "Panel", icon: LayoutDashboard },
-  { href: "/patients", label: "Patients", es: "Pacientes", icon: Users },
-  { href: "/caregivers", label: "Caregivers", es: "Cuidadores", icon: UserRound },
-  { href: "/care-plans", label: "Care Plans", es: "Planes", icon: ClipboardPlus },
-  { href: "/appointments", label: "Appointments", es: "Citas", icon: CalendarDays },
-  { href: "/medications", label: "Medications", es: "Medicamentos", icon: Pill },
-  { href: "/tasks", label: "Care Tasks", es: "Tareas", icon: ClipboardList },
-  { href: "/care-circle", label: "Care Circle", es: "Círculo", icon: Users },
-  { href: "/care-journey", label: "Care Journey", es: "Seguimiento", icon: Route },
-  { href: "/notifications", label: "Alerts", es: "Avisos", icon: Bell },
-  { href: "/account", label: "Account", es: "Cuenta", icon: CircleUserRound },
+  {
+    href: "/patients",
+    label: "My Loved Ones",
+    es: "Mis seres queridos",
+    icon: Heart,
+    roles: ["family_caregiver"],
+    authOnly: true,
+  },
+  {
+    href: "/portal/patient",
+    label: "My Care",
+    es: "Mi cuidado",
+    icon: Heart,
+    roles: ["patient"],
+    authOnly: true,
+  },
+  {
+    href: "/caregivers",
+    label: "Care Team",
+    es: "Equipo",
+    icon: UserRound,
+    roles: ["family_caregiver"],
+    authOnly: true,
+  },
+  { href: "/care-plans", label: "Care Plans", es: "Planes", icon: ClipboardPlus, authOnly: true },
+  { href: "/appointments", label: "Appointments", es: "Citas", icon: CalendarDays, authOnly: true },
+  { href: "/medications", label: "Medications", es: "Medicamentos", icon: Pill, authOnly: true },
+  { href: "/tasks", label: "Care Tasks", es: "Tareas", icon: ClipboardList, authOnly: true },
+  { href: "/care-circle", label: "Care Circle", es: "Círculo", icon: Users, authOnly: true },
+  { href: "/care-journey", label: "Care Journey", es: "Seguimiento", icon: Route, authOnly: true },
+  { href: "/notifications", label: "Alerts", es: "Avisos", icon: Bell, authOnly: true },
+  { href: "/account", label: "Account", es: "Cuenta", icon: CircleUserRound, authOnly: true },
 ];
 
 export function AppShell({
@@ -45,15 +80,35 @@ export function AppShell({
   viewerName,
   locale: localeProp = "en",
   showLogout = false,
+  accountType,
 }: {
   children: React.ReactNode;
   sourceLabel?: string;
   viewerName?: string;
   locale?: Locale;
   showLogout?: boolean;
+  accountType?: "patient" | "family_caregiver";
 }) {
   const pathname = usePathname();
+  const { data: session } = useSession();
   const [locale, setLocale] = useState<Locale>(localeProp);
+
+  const sessionAccountType =
+    accountType ||
+    (session?.user?.accountType as "patient" | "family_caregiver" | undefined);
+  const signedIn = Boolean(showLogout || viewerName || session?.user?.id);
+
+  const visibleNav = useMemo(() => {
+    return nav.filter((item) => {
+      if (item.guestOnly && signedIn) return false;
+      if (item.authOnly && !signedIn) return false;
+      if (item.roles?.length) {
+        if (!sessionAccountType) return false;
+        return item.roles.includes(sessionAccountType);
+      }
+      return true;
+    });
+  }, [signedIn, sessionAccountType]);
 
   useEffect(() => {
     setLocale(localeProp);
@@ -115,7 +170,7 @@ export function AppShell({
         </div>
 
         <nav className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-4 pb-3 sm:px-6 lg:px-8">
-          {nav.map((item) => {
+          {visibleNav.map((item) => {
             const active =
               item.href === "/"
                 ? pathname === "/"

@@ -69,14 +69,15 @@ export default async function PatientProfilePage({
   return (
     <AppShell
       sourceLabel={snapshot.source === "meridian" ? "Meridian" : "Unavailable"}
-            viewerName={viewer.verified ? viewer.name : undefined}
+      viewerName={viewer.verified ? viewer.name : undefined}
       showLogout={viewer.verified}
+      accountType={viewer.accountType}
     >
       <div className="space-y-6 animate-fadeUp">
         <Button asChild variant="ghost" size="sm" className="-ml-2">
           <Link href="/patients">
             <ArrowLeft className="h-4 w-4" />
-            Back to directory / Volver
+            Back to loved ones / Volver
           </Link>
         </Button>
 

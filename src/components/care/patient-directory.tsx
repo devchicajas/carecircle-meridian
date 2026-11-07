@@ -8,9 +8,16 @@ import { Badge } from "@/components/ui/badge";
 import { Patient } from "@/lib/meridian/care-data";
 import { cn } from "@/lib/utils";
 
-export function PatientDirectory({ patients }: { patients: Patient[] }) {
+export function PatientDirectory({
+  patients,
+  framing = "patients",
+}: {
+  patients: Patient[];
+  framing?: "patients" | "lovedOnes";
+}) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<string>("all");
+  const isLovedOnes = framing === "lovedOnes";
 
   const statuses = useMemo(() => {
     const set = new Set(patients.map((p) => p.status).filter(Boolean));
@@ -40,7 +47,11 @@ export function PatientDirectory({ patients }: { patients: Patient[] }) {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search patients · Buscar pacientes"
+            placeholder={
+              isLovedOnes
+                ? "Search loved ones · Buscar seres queridos"
+                : "Search patients · Buscar pacientes"
+            }
             className="pl-11"
           />
         </div>
@@ -71,7 +82,9 @@ export function PatientDirectory({ patients }: { patients: Patient[] }) {
 
       {filtered.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-ink-200 bg-white/60 p-10 text-center text-ink-500">
-          No patients match this filter.
+          {isLovedOnes
+            ? "No loved ones match this filter."
+            : "No patients match this filter."}
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

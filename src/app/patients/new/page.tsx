@@ -14,21 +14,26 @@ export default async function NewPatientPage() {
   return (
     <AppShell
       sourceLabel={snapshot.source === "meridian" ? "Meridian" : "Unavailable"}
-            viewerName={viewer.verified ? viewer.name : undefined}
+      viewerName={viewer.verified ? viewer.name : undefined}
       showLogout={viewer.verified}
+      accountType={viewer.accountType}
     >
       <div className="space-y-6 animate-fadeUp">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <p className="text-sm font-medium uppercase tracking-[0.18em] text-matcha-700">
-              Intake · Alta
+              Add loved one · Agregar ser querido
             </p>
             <h1 className="mt-2 text-3xl font-semibold text-ink-900">
-              Create patient profile
+              Create a care profile for someone you support
             </h1>
+            <p className="mt-2 max-w-2xl text-ink-600">
+              This creates a Meridian patient record you can then link through
+              Care Circle — it is not a clinic patient directory.
+            </p>
           </div>
           <Button asChild variant="outline">
-            <Link href="/patients">Back to directory</Link>
+            <Link href="/patients">Back to loved ones</Link>
           </Button>
         </div>
         <CreatePatientForm />
