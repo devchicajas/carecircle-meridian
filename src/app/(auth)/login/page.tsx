@@ -12,6 +12,7 @@ export default async function LoginPage() {
   const locale = await getServerLocale();
   const t = getDictionary(locale);
   const user = await getSessionUser();
+  if (user?.accountType === "admin") redirect("/admin");
   if (user?.onboarded) redirect("/");
   if (user && !user.onboarded) redirect("/onboarding");
 

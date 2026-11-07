@@ -38,7 +38,7 @@ export type AuthorizedCareView = {
   loadingError?: string;
   authError?: CareSnapshot["authError"];
   warnings: string[];
-  scope: "anonymous" | "patient" | "family_caregiver";
+  scope: "anonymous" | "patient" | "family_caregiver" | "admin";
   /** Patients the viewer may see */
   patients: Patient[];
   caregivers: Caregiver[];
@@ -174,6 +174,27 @@ export async function loadAuthorizedCareView(
     };
   }
 
+  if (account.accountType === "admin") {
+    const aliases = buildAliasSet(raw.patients);
+    const scoped = {
+      patients: raw.patients,
+      caregivers: raw.caregivers,
+      memberships: raw.memberships,
+      carePlans: raw.carePlans,
+      appointments: raw.appointments,
+      medications: raw.medications,
+      tasks: raw.tasks,
+      notifications: raw.notifications,
+    };
+    return {
+      ...base,
+      scope: "admin",
+      ...scoped,
+      patientAliases: [...aliases],
+      metrics: computeScopedMetrics(scoped),
+    };
+  }
+
   if (account.accountType === "patient") {
     const linked = raw.patients.find(
       (p) =>
@@ -295,6 +316,10 @@ export async function assertAuthorizedPatientAccess(
       detail: "Authentication required.",
     });
   }
+  if (account.accountType === "admin") {
+    return loadAuthorizedCareView(account);
+  }
+
   const view = await loadAuthorizedCareView(account);
   const aliases = new Set(view.patientAliases);
   // Also allow if ref matches one of the authorized patients directly

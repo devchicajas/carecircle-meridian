@@ -13,6 +13,15 @@
 - **No email verification** in this controlled synthetic environment
 - Unverified email is **not** treated as proof of identity for arbitrary Meridian rows
 - Users cannot self-assign Care Coordinator or Admin
+- Login returns distinct codes: `ACCOUNT_NOT_FOUND`, `WRONG_PASSWORD`, `INVALID_EMAIL`
+- Post-login redirects: Admin → `/admin`, Patient → `/portal/patient`, Caregiver → `/`, not onboarded → `/onboarding`
+
+## Login failure root cause (Nov 2026)
+
+Some accounts failed with “original” passwords because an earlier automated E2E run
+**overwrote bcrypt hashes** in SQLite without authorization. Those hashes were
+**restored from the SQLite WAL** to the pre-overwrite values. CareCircle auth remains
+separate from Meridian profile linking; missing Meridian IDs do not block login.
 
 ## Meridian profile create
 
@@ -27,7 +36,10 @@ When Meridian ID sequences work again, **Create profile in Meridian** succeeds w
 ## Env
 
 ```bash
-AUTH_SECRET=...                 # required
-MERIDIAN_API_KEY=...            # server-only
-CARECIRCLE_AUTH_DB=./data/...   # optional
+AUTH_SECRET=...                         # required
+MERIDIAN_API_KEY=...                    # server-only
+CARECIRCLE_AUTH_DB=./data/...           # optional
+CARECIRCLE_ADMIN_BOOTSTRAP_TOKEN=...    # required to provision Admin
 ```
+
+See also [ADMIN.md](./ADMIN.md).

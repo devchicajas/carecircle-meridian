@@ -12,6 +12,7 @@ export function CredentialsLoginForm({ locale }: { locale: "en" | "es" }) {
   const params = useSearchParams();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorEs, setErrorEs] = useState<string | null>(null);
   const [form, setForm] = useState({
     email: params.get("email") || "",
     password: "",
@@ -21,8 +22,9 @@ export function CredentialsLoginForm({ locale }: { locale: "en" | "es" }) {
     e.preventDefault();
     setPending(true);
     setError(null);
+    setErrorEs(null);
     try {
-      const email = form.email.trim();
+      const email = form.email.trim().toLowerCase();
       // Pre-validate so we show a clear error before Auth.js session dance.
       const check = await fetch("/api/auth/login", {
         method: "POST",
@@ -31,11 +33,12 @@ export function CredentialsLoginForm({ locale }: { locale: "en" | "es" }) {
       });
       const checkData = await check.json().catch(() => ({}));
       if (!check.ok) {
+        setErrorEs(checkData?.errorEs || null);
         throw new Error(
           checkData?.error ||
             (locale === "es"
-              ? "Correo o contraseña incorrectos."
-              : "Invalid email or password."),
+              ? "No se pudo iniciar sesión."
+              : "Could not log in."),
         );
       }
 
@@ -48,8 +51,15 @@ export function CredentialsLoginForm({ locale }: { locale: "en" | "es" }) {
       if (result?.error && result.error !== "undefined") {
         throw new Error(
           locale === "es"
-            ? "No se pudo iniciar sesión. Inténtalo de nuevo."
-            : "Could not start your session. Please try again.",
+            ? "La contraseña es correcta, pero no se pudo crear la sesión. Recarga e inténtalo de nuevo."
+            : "Password verified, but the session could not be started. Refresh and try again.",
+        );
+      }
+      if (result?.ok === false) {
+        throw new Error(
+          locale === "es"
+            ? "No se pudo crear la sesión. Recarga e inténtalo de nuevo."
+            : "Could not create your session. Refresh and try again.",
         );
       }
 
@@ -86,9 +96,12 @@ export function CredentialsLoginForm({ locale }: { locale: "en" | "es" }) {
         />
       </label>
       {error ? (
-        <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </p>
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <p>{error}</p>
+          {errorEs && locale === "en" ? (
+            <p className="mt-1 text-red-600/80">{errorEs}</p>
+          ) : null}
+        </div>
       ) : null}
       <Button type="submit" className="w-full" size="lg" disabled={pending}>
         {pending
@@ -97,6 +110,14 @@ export function CredentialsLoginForm({ locale }: { locale: "en" | "es" }) {
             ? "Iniciar sesión"
             : "Log in"}
       </Button>
+      <p className="text-center text-sm text-ink-500">
+        <Link
+          href="/forgot-password"
+          className="font-medium text-ink-700 underline"
+        >
+          {locale === "es" ? "Olvidé mi contraseña" : "Forgot password?"}
+        </Link>
+      </p>
       <p className="text-center text-sm text-ink-500">
         {locale === "es" ? "¿Nuevo en CareCircle?" : "New to CareCircle?"}{" "}
         <Link

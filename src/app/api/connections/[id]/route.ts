@@ -44,12 +44,13 @@ export async function PATCH(
     return privateJson(inviteMessagesBoth("invalid"), { status: 404 });
   }
 
+  const isAdmin = identity.accountType === "admin";
   const isPatientOwner =
     identity.accountType === "patient" &&
     identity.id === connection.patient_user_id;
 
   let isCoordinator = false;
-  if (!isPatientOwner) {
+  if (!isPatientOwner && !isAdmin) {
     const snap = await loadCareSnapshot();
     const cg = snap.caregivers.find(
       (c) =>
@@ -63,7 +64,7 @@ export async function PATCH(
     );
   }
 
-  if (!isPatientOwner && !isCoordinator) {
+  if (!isPatientOwner && !isCoordinator && !isAdmin) {
     return privateJson(inviteMessagesBoth("unauthorized"), { status: 403 });
   }
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { findUserById, toPublicUser } from "@/lib/auth/db";
+import type { AccountType } from "@/lib/account/types";
 
 export type AppSessionUser = {
   id: string;
@@ -9,8 +10,8 @@ export type AppSessionUser = {
   firstName: string;
   lastName: string;
   preferredLanguage: "English" | "Spanish";
-  accountType: "patient" | "family_caregiver";
-  role: "patient" | "family_caregiver";
+  accountType: AccountType;
+  role: AccountType;
   onboarded: boolean;
   meridianPatientId?: string;
   meridianPatientBusinessId?: string;
@@ -53,6 +54,22 @@ export async function requireAppUser(_request?: Request) {
     meridianCaregiverId: pub.meridianCaregiverId,
     meridianCaregiverBusinessId: pub.meridianCaregiverBusinessId,
   };
+  return user;
+}
+
+export async function requireAdminUser(request?: Request) {
+  const user = await requireAppUser(request);
+  if (user instanceof Response) return user;
+  if (user.accountType !== "admin") {
+    return NextResponse.json(
+      {
+        error: "Admin access required.",
+        errorEs: "Se requiere acceso de administrador.",
+        code: "ADMIN_REQUIRED",
+      },
+      { status: 403 },
+    );
+  }
   return user;
 }
 

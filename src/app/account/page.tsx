@@ -18,7 +18,11 @@ export default async function AccountPage() {
   if (!user) redirect("/login");
 
   const roleLabel =
-    user.accountType === "patient" ? "Patient" : "Family Caregiver";
+    user.accountType === "admin"
+      ? "Admin"
+      : user.accountType === "patient"
+        ? "Patient"
+        : "Family Caregiver";
 
   return (
     <AppShell

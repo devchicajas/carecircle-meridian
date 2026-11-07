@@ -12,8 +12,13 @@ export async function getPageViewer() {
       accountType: undefined as
         | "patient"
         | "family_caregiver"
+        | "admin"
         | undefined,
-      role: undefined as "patient" | "family_caregiver" | undefined,
+      role: undefined as
+        | "patient"
+        | "family_caregiver"
+        | "admin"
+        | undefined,
       onboarded: false,
       meridianCaregiverId: undefined as string | undefined,
       meridianCaregiverBusinessId: undefined as string | undefined,

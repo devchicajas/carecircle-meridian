@@ -32,13 +32,21 @@ type NavItem = {
   es: string;
   icon: typeof LayoutDashboard;
   /** When set, only show for these account types (or guests if includeGuest). */
-  roles?: Array<"patient" | "family_caregiver">;
+  roles?: Array<"patient" | "family_caregiver" | "admin">;
   guestOnly?: boolean;
   authOnly?: boolean;
 };
 
 const nav: NavItem[] = [
   { href: "/signup", label: "Sign Up", es: "Registro", icon: LogIn, guestOnly: true },
+  {
+    href: "/admin",
+    label: "Admin",
+    es: "Admin",
+    icon: LayoutDashboard,
+    roles: ["admin"],
+    authOnly: true,
+  },
   { href: "/", label: "Dashboard", es: "Panel", icon: LayoutDashboard },
   {
     href: "/patients",
@@ -61,16 +69,16 @@ const nav: NavItem[] = [
     label: "Care Team",
     es: "Equipo",
     icon: UserRound,
-    roles: ["family_caregiver"],
+    roles: ["family_caregiver", "admin"],
     authOnly: true,
   },
-  { href: "/care-plans", label: "Care Plans", es: "Planes", icon: ClipboardPlus, authOnly: true },
-  { href: "/appointments", label: "Appointments", es: "Citas", icon: CalendarDays, authOnly: true },
-  { href: "/medications", label: "Medications", es: "Medicamentos", icon: Pill, authOnly: true },
-  { href: "/tasks", label: "Care Tasks", es: "Tareas", icon: ClipboardList, authOnly: true },
-  { href: "/care-circle", label: "Care Circle", es: "Círculo", icon: Users, authOnly: true },
-  { href: "/care-journey", label: "Care Journey", es: "Seguimiento", icon: Route, authOnly: true },
-  { href: "/notifications", label: "Alerts", es: "Avisos", icon: Bell, authOnly: true },
+  { href: "/care-plans", label: "Care Plans", es: "Planes", icon: ClipboardPlus, authOnly: true, roles: ["patient", "family_caregiver", "admin"] },
+  { href: "/appointments", label: "Appointments", es: "Citas", icon: CalendarDays, authOnly: true, roles: ["patient", "family_caregiver", "admin"] },
+  { href: "/medications", label: "Medications", es: "Medicamentos", icon: Pill, authOnly: true, roles: ["patient", "family_caregiver", "admin"] },
+  { href: "/tasks", label: "Care Tasks", es: "Tareas", icon: ClipboardList, authOnly: true, roles: ["patient", "family_caregiver", "admin"] },
+  { href: "/care-circle", label: "Care Circle", es: "Círculo", icon: Users, authOnly: true, roles: ["patient", "family_caregiver", "admin"] },
+  { href: "/care-journey", label: "Care Journey", es: "Seguimiento", icon: Route, authOnly: true, roles: ["patient", "family_caregiver"] },
+  { href: "/notifications", label: "Alerts", es: "Avisos", icon: Bell, authOnly: true, roles: ["patient", "family_caregiver", "admin"] },
   { href: "/account", label: "Account", es: "Cuenta", icon: CircleUserRound, authOnly: true },
 ];
 
@@ -88,7 +96,7 @@ export function AppShell({
   viewerName?: string;
   locale?: Locale;
   showLogout?: boolean;
-  accountType?: "patient" | "family_caregiver";
+  accountType?: "patient" | "family_caregiver" | "admin";
   accountRole?: string;
 }) {
   const pathname = usePathname();
@@ -97,7 +105,11 @@ export function AppShell({
 
   const sessionAccountType =
     accountType ||
-    (session?.user?.accountType as "patient" | "family_caregiver" | undefined);
+    (session?.user?.accountType as
+      | "patient"
+      | "family_caregiver"
+      | "admin"
+      | undefined);
   const signedIn = Boolean(showLogout || viewerName || session?.user?.id);
 
   const visibleNav = useMemo(() => {

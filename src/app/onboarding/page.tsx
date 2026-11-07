@@ -13,6 +13,7 @@ export default async function OnboardingPage() {
   const user = await getSessionUser();
 
   if (!user) redirect("/login");
+  if (user.accountType === "admin") redirect("/admin");
   if (user.onboarded) redirect("/");
 
   return (

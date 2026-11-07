@@ -327,6 +327,24 @@ export function listConnectionRequestsForCaregiver(caregiverUserId: string) {
     .all(caregiverUserId) as ConnectionRequestRow[];
 }
 
+export function listAllConnectionRequests(status?: ConnectionRequestRow["status"]) {
+  ensureTables();
+  if (status) {
+    return getAuthDb()
+      .prepare(
+        `SELECT * FROM connection_requests
+         WHERE status = ?
+         ORDER BY created_at DESC`,
+      )
+      .all(status) as ConnectionRequestRow[];
+  }
+  return getAuthDb()
+    .prepare(
+      `SELECT * FROM connection_requests ORDER BY created_at DESC`,
+    )
+    .all() as ConnectionRequestRow[];
+}
+
 export function decideConnectionRequest(input: {
   requestId: string;
   status: "approved" | "rejected";

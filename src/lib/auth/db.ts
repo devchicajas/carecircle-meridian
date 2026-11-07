@@ -27,6 +27,42 @@ const DB_PATH =
 
 let dbSingleton: Database.Database | null = null;
 
+function migrateAccountTypeConstraint(db: Database.Database) {
+  const row = db
+    .prepare(
+      `SELECT sql FROM sqlite_master WHERE type='table' AND name='users'`,
+    )
+    .get() as { sql?: string } | undefined;
+  const sql = row?.sql || "";
+  if (sql.includes("'admin'")) return;
+
+  db.exec(`
+    BEGIN;
+    CREATE TABLE users_migrated (
+      id TEXT PRIMARY KEY NOT NULL,
+      email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      password_hash TEXT NOT NULL,
+      first_name TEXT NOT NULL,
+      last_name TEXT NOT NULL,
+      preferred_name TEXT,
+      preferred_language TEXT NOT NULL DEFAULT 'English',
+      account_type TEXT NOT NULL CHECK(account_type IN ('patient', 'family_caregiver', 'admin')),
+      meridian_patient_id TEXT,
+      meridian_patient_business_id TEXT,
+      meridian_caregiver_id TEXT,
+      meridian_caregiver_business_id TEXT,
+      onboarded INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    INSERT INTO users_migrated SELECT * FROM users;
+    DROP TABLE users;
+    ALTER TABLE users_migrated RENAME TO users;
+    CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+    COMMIT;
+  `);
+}
+
 export function getAuthDb() {
   if (dbSingleton) return dbSingleton;
   mkdirSync(dirname(DB_PATH), { recursive: true });
@@ -41,7 +77,7 @@ export function getAuthDb() {
       last_name TEXT NOT NULL,
       preferred_name TEXT,
       preferred_language TEXT NOT NULL DEFAULT 'English',
-      account_type TEXT NOT NULL CHECK(account_type IN ('patient', 'family_caregiver')),
+      account_type TEXT NOT NULL CHECK(account_type IN ('patient', 'family_caregiver', 'admin')),
       meridian_patient_id TEXT,
       meridian_patient_business_id TEXT,
       meridian_caregiver_id TEXT,
@@ -52,6 +88,7 @@ export function getAuthDb() {
     );
     CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
   `);
+  migrateAccountTypeConstraint(db);
   dbSingleton = db;
   return db;
 }
@@ -70,6 +107,19 @@ export function findUserById(id: string): AuthUserRow | null {
   return row ?? null;
 }
 
+export function listUsers(): AuthUserRow[] {
+  return getAuthDb()
+    .prepare(`SELECT * FROM users ORDER BY created_at DESC`)
+    .all() as AuthUserRow[];
+}
+
+export function countUsersByAccountType(accountType: AccountType) {
+  const row = getAuthDb()
+    .prepare(`SELECT COUNT(*) AS c FROM users WHERE account_type = ?`)
+    .get(accountType) as { c: number };
+  return row.c;
+}
+
 export function insertUser(input: {
   id: string;
   email: string;
@@ -78,6 +128,7 @@ export function insertUser(input: {
   lastName: string;
   preferredLanguage: "English" | "Spanish";
   accountType: AccountType;
+  onboarded?: boolean;
 }) {
   const now = new Date().toISOString();
   getAuthDb()
@@ -85,7 +136,7 @@ export function insertUser(input: {
       `INSERT INTO users (
         id, email, password_hash, first_name, last_name, preferred_language,
         account_type, onboarded, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       input.id,
@@ -95,6 +146,7 @@ export function insertUser(input: {
       input.lastName.trim(),
       input.preferredLanguage,
       input.accountType,
+      input.onboarded ? 1 : 0,
       now,
       now,
     );
@@ -108,11 +160,13 @@ export function updateUserProfile(
     lastName: string;
     preferredName: string | null;
     preferredLanguage: "English" | "Spanish";
+    accountType: AccountType;
     meridianPatientId: string | null;
     meridianPatientBusinessId: string | null;
     meridianCaregiverId: string | null;
     meridianCaregiverBusinessId: string | null;
     onboarded: boolean;
+    passwordHash: string;
   }>,
 ) {
   const current = findUserById(id);
@@ -125,6 +179,7 @@ export function updateUserProfile(
         ? patch.preferredName
         : current.preferred_name,
     preferred_language: patch.preferredLanguage ?? current.preferred_language,
+    account_type: patch.accountType ?? current.account_type,
     meridian_patient_id:
       patch.meridianPatientId !== undefined
         ? patch.meridianPatientId
@@ -147,15 +202,17 @@ export function updateUserProfile(
           ? 1
           : 0
         : current.onboarded,
+    password_hash: patch.passwordHash ?? current.password_hash,
     updated_at: new Date().toISOString(),
   };
   getAuthDb()
     .prepare(
       `UPDATE users SET
         first_name = ?, last_name = ?, preferred_name = ?, preferred_language = ?,
+        account_type = ?,
         meridian_patient_id = ?, meridian_patient_business_id = ?,
         meridian_caregiver_id = ?, meridian_caregiver_business_id = ?,
-        onboarded = ?, updated_at = ?
+        onboarded = ?, password_hash = ?, updated_at = ?
       WHERE id = ?`,
     )
     .run(
@@ -163,11 +220,13 @@ export function updateUserProfile(
       next.last_name,
       next.preferred_name,
       next.preferred_language,
+      next.account_type,
       next.meridian_patient_id,
       next.meridian_patient_business_id,
       next.meridian_caregiver_id,
       next.meridian_caregiver_business_id,
       next.onboarded,
+      next.password_hash,
       next.updated_at,
       id,
     );
@@ -183,11 +242,11 @@ export function toPublicUser(row: AuthUserRow) {
     preferredName: row.preferred_name || undefined,
     preferredLanguage: row.preferred_language,
     accountType: row.account_type,
-    role: row.account_type as "patient" | "family_caregiver",
+    role: row.account_type as AccountType,
     meridianPatientId: row.meridian_patient_id || undefined,
     meridianPatientBusinessId: row.meridian_patient_business_id || undefined,
     meridianCaregiverId: row.meridian_caregiver_id || undefined,
     meridianCaregiverBusinessId: row.meridian_caregiver_business_id || undefined,
-    onboarded: row.onboarded === 1,
+    onboarded: row.onboarded === 1 || row.account_type === "admin",
   };
 }

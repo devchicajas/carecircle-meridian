@@ -2,6 +2,7 @@ import type { NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { findUserByEmail, findUserById, toPublicUser } from "@/lib/auth/db";
 import { validateEmailFormat, verifyPassword } from "@/lib/auth/password";
+import type { AccountType } from "@/lib/account/types";
 
 /**
  * CareCircle demo auth:
@@ -9,6 +10,7 @@ import { validateEmailFormat, verifyPassword } from "@/lib/auth/password";
  * - Email is a login identifier only (example.com allowed)
  * - Email verification is intentionally disabled for this controlled synthetic demo
  * - Meridian remains the source of truth for care records (not passwords)
+ * - Admin accounts are never creatable via public signup
  */
 export const authConfig = {
   trustHost: true,
@@ -25,7 +27,7 @@ export const authConfig = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        const email = String(credentials?.email || "").trim();
+        const email = String(credentials?.email || "").trim().toLowerCase();
         const password = String(credentials?.password || "");
         if (validateEmailFormat(email)) return null;
         if (!password) return null;
@@ -53,12 +55,12 @@ export const authConfig = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user, trigger }) {
-      const userId = (user?.id as string | undefined) || (token.sub as string | undefined);
+    async jwt({ token }) {
+      const userId = token.sub as string | undefined;
       if (!userId) return token;
 
       // Always refresh profile + Meridian links from SQLite so invite re-link
-      // and onboarding updates apply without forcing a full re-login.
+      // and role changes apply without forcing a full re-login.
       const row = findUserById(userId);
       if (row) {
         const pub = toPublicUser(row);
@@ -75,9 +77,6 @@ export const authConfig = {
         token.meridianPatientBusinessId = pub.meridianPatientBusinessId;
         token.meridianCaregiverId = pub.meridianCaregiverId;
         token.meridianCaregiverBusinessId = pub.meridianCaregiverBusinessId;
-      } else if (user) {
-        // Fall back to authorize() payload on first sign-in if row missing.
-        Object.assign(token, user);
       }
       return token;
     },
@@ -91,10 +90,8 @@ export const authConfig = {
         session.user.preferredLanguage = token.preferredLanguage as
           | "English"
           | "Spanish";
-        session.user.accountType = token.accountType as
-          | "patient"
-          | "family_caregiver";
-        session.user.role = token.role as "patient" | "family_caregiver";
+        session.user.accountType = token.accountType as AccountType;
+        session.user.role = token.role as AccountType;
         session.user.onboarded = Boolean(token.onboarded);
         session.user.meridianPatientId = token.meridianPatientId as
           | string

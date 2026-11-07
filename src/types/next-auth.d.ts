@@ -1,4 +1,5 @@
 import type { DefaultSession } from "next-auth";
+import type { AccountType } from "@/lib/account/types";
 
 declare module "next-auth" {
   interface Session {
@@ -7,8 +8,8 @@ declare module "next-auth" {
       firstName: string;
       lastName: string;
       preferredLanguage: "English" | "Spanish";
-      accountType: "patient" | "family_caregiver";
-      role: "patient" | "family_caregiver";
+      accountType: AccountType;
+      role: AccountType;
       onboarded: boolean;
       meridianPatientId?: string;
       meridianPatientBusinessId?: string;
@@ -21,8 +22,8 @@ declare module "next-auth" {
     firstName?: string;
     lastName?: string;
     preferredLanguage?: "English" | "Spanish";
-    accountType?: "patient" | "family_caregiver";
-    role?: "patient" | "family_caregiver";
+    accountType?: AccountType;
+    role?: AccountType;
     onboarded?: boolean;
     meridianPatientId?: string;
     meridianPatientBusinessId?: string;
@@ -36,8 +37,8 @@ declare module "next-auth/jwt" {
     firstName?: string;
     lastName?: string;
     preferredLanguage?: "English" | "Spanish";
-    accountType?: "patient" | "family_caregiver";
-    role?: "patient" | "family_caregiver";
+    accountType?: AccountType;
+    role?: AccountType;
     onboarded?: boolean;
     meridianPatientId?: string;
     meridianPatientBusinessId?: string;

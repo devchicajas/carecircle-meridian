@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
   Activity,
   ArrowRight,
@@ -30,6 +31,7 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   const viewer = await getPageViewer();
   const profile = await getSessionUser();
+  if (profile?.accountType === "admin") redirect("/admin");
   const view = await loadAuthorizedCareView(
     profile
       ? {
