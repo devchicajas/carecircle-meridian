@@ -33,7 +33,7 @@ export function StatusBanner({
               Connected to Meridian · Conectado a Meridian
             </p>
             <p className="mt-1 text-matcha-800/80">
-              Patients via{" "}
+              Care records via{" "}
               <code className="rounded bg-white/70 px-1">
                 {patientObject ?? "patient"}
               </code>
@@ -44,7 +44,6 @@ export function StatusBanner({
                   <code className="rounded bg-white/70 px-1">{taskObject}</code>
                 </>
               ) : null}
-              {" "}· Read-only
             </p>
           </div>
         </CardContent>
