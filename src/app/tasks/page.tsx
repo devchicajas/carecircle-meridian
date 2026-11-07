@@ -5,28 +5,91 @@ import { EmptyState } from "@/components/care/empty-state";
 import { CreateTaskForm } from "@/components/care/create-task-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  loadCareSnapshot,
   resolveCaregiverLabel,
   resolvePatientLabel,
 } from "@/lib/meridian/care-data";
+import { loadAuthorizedCareView } from "@/lib/meridian/authorized-care";
+import { getSessionUser } from "@/lib/auth";
 import { getPageViewer } from "@/lib/viewer";
+import { redirect } from "next/navigation";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
 
 export default async function TasksPage() {
   const viewer = await getPageViewer();
-  const snapshot = await loadCareSnapshot();
-  const tasks = snapshot.tasks.map((task) => ({
+  const profile = await getSessionUser();
+  if (!profile) redirect("/login");
+
+  const view = await loadAuthorizedCareView({
+    id: profile.id,
+    accountType: profile.accountType,
+    meridianPatientId: profile.meridianPatientId,
+    meridianPatientBusinessId: profile.meridianPatientBusinessId,
+    meridianCaregiverId: profile.meridianCaregiverId,
+    meridianCaregiverBusinessId: profile.meridianCaregiverBusinessId,
+  });
+
+  const tasks = view.tasks.map((task) => ({
     ...task,
-    patientName: resolvePatientLabel(snapshot.patients, task.patientRef),
-    assignee: resolveCaregiverLabel(snapshot.caregivers, task.assigneeRef),
+    patientName: resolvePatientLabel(view.rawSnapshot.patients, task.patientRef),
+    assignee: resolveCaregiverLabel(
+      view.rawSnapshot.caregivers,
+      task.assigneeRef,
+    ),
   }));
+
+  const patientOptions = view.patients.map((p) => ({
+    value: p.businessId || p.id,
+    label: `${p.name}${p.businessId ? ` (${p.businessId})` : ""}`,
+  }));
+
+  // Eligible assignees: caregivers with Active membership to authorized patients
+  const eligibleCaregiverRefs = new Set(
+    view.memberships
+      .filter((m) => /active/i.test(m.status))
+      .map((m) => m.caregiverRef)
+      .filter(Boolean) as string[],
+  );
+  const caregiverOptions = view.rawSnapshot.caregivers
+    .filter(
+      (c) =>
+        eligibleCaregiverRefs.has(c.id) ||
+        eligibleCaregiverRefs.has(c.businessId || "") ||
+        (view.scope === "family_caregiver" &&
+          (c.id === profile.meridianCaregiverId ||
+            c.businessId === profile.meridianCaregiverBusinessId)),
+    )
+    .map((c) => ({
+      value: c.businessId || c.id,
+      label: `${c.name}${c.businessId ? ` (${c.businessId})` : ""}`,
+    }));
+
+  const carePlanOptions = view.carePlans.map((p) => ({
+    value: p.businessId || p.id,
+    label: `${p.businessId || p.id} · ${p.status} · ${
+      resolvePatientLabel(view.rawSnapshot.patients, p.patientRef) ||
+      p.patientRef ||
+      "Patient?"
+    }`,
+    patientRef: p.patientRef,
+  }));
+
+  const missingPrereqs =
+    patientOptions.length === 0 ||
+    carePlanOptions.length === 0 ||
+    caregiverOptions.length === 0;
 
   return (
     <AppShell
-      sourceLabel={snapshot.source === "meridian" ? "Meridian" : "Unavailable"}
-            viewerName={viewer.verified ? viewer.name : undefined}
+      sourceLabel={view.source === "meridian" ? "Meridian" : "Unavailable"}
+      viewerName={viewer.verified ? viewer.name : undefined}
       showLogout={viewer.verified}
+      accountType={viewer.accountType}
+      accountRole={
+        view.scope === "patient" ? "Patient" : "Family Caregiver"
+      }
     >
       <div className="space-y-6 animate-fadeUp">
         <div>
@@ -34,55 +97,73 @@ export default async function TasksPage() {
             Care Tasks · Tareas de Cuidado
           </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink-900">
-            Assigned work across the circle
+            {view.scope === "patient" ? "My care tasks" : "Authorized care tasks"}
           </h1>
           <p className="mt-2 max-w-2xl text-ink-600">
-            Create and update tasks through Meridian Object API (
-            <code>careTask</code>). Business IDs are generated server-side.
-            CareCircle also verifies that a task&apos;s Patient matches its Care
-            Plan&apos;s Patient before every write (server-side only — not a
-            Meridian-global rule).
+            Tasks require a Care Plan that belongs to the Patient and an
+            Assigned Caregiver with an Active Care Circle membership. Validation
+            runs on the CareCircle server before Meridian writes.
           </p>
         </div>
 
         <StatusBanner
-          source={snapshot.source}
-          connected={snapshot.connected}
-          warnings={snapshot.warnings}
-          authError={snapshot.authError}
-          loadingError={snapshot.loadingError}
-          patientObject={snapshot.patientObject}
-          taskObject={snapshot.taskObject}
+          source={view.source}
+          connected={view.connected}
+          warnings={view.warnings}
+          authError={view.authError}
+          loadingError={view.loadingError}
+          patientObject={view.patientObject}
+          taskObject={view.taskObject}
         />
 
-        <CreateTaskForm
-          patients={snapshot.patients.map((p) => ({
-            value: p.businessId || p.id,
-            label: `${p.name}${p.businessId ? ` (${p.businessId})` : ""}`,
-          }))}
-          caregivers={snapshot.caregivers.map((c) => ({
-            value: c.businessId || c.id,
-            label: `${c.name}${c.businessId ? ` (${c.businessId})` : ""}`,
-          }))}
-          carePlans={snapshot.carePlans.map((p) => ({
-            value: p.businessId || p.id,
-            label: `${p.businessId || p.id} · ${p.status} · ${resolvePatientLabel(snapshot.patients, p.patientRef) || p.patientRef || "Patient?"}`,
-            patientRef: p.patientRef,
-          }))}
-        />
+        {missingPrereqs ? (
+          <EmptyState
+            title="Task setup incomplete"
+            titleEs="Falta configuración"
+            detail={
+              patientOptions.length === 0
+                ? "No authorized patient yet. Add/activate a Care Circle membership first."
+                : carePlanOptions.length === 0
+                  ? "Create an authorized Care Plan before assigning tasks."
+                  : "No eligible Assigned Caregiver with Active membership for your patients."
+            }
+          />
+        ) : (
+          <CreateTaskForm
+            patients={patientOptions}
+            caregivers={caregiverOptions}
+            carePlans={carePlanOptions}
+          />
+        )}
+
+        {missingPrereqs ? (
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link href="/care-circle">Care Circle</Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/care-plans">Care Plans</Link>
+            </Button>
+            {view.scope === "family_caregiver" ? (
+              <Button asChild variant="outline" size="sm">
+                <Link href="/patients/add">Add loved one</Link>
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
 
         <Card>
           <CardHeader>
             <CardTitle>
-              {tasks.length} task{tasks.length === 1 ? "" : "s"}
+              {tasks.length} authorized task{tasks.length === 1 ? "" : "s"}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {tasks.length === 0 ? (
               <EmptyState
-                title="No care tasks returned"
-                titleEs="Sin tareas"
-                detail="Confirm careTask is exposed and contains rows."
+                title="No authorized tasks"
+                titleEs="Sin tareas autorizadas"
+                detail="Meridian careTask rows for your account will appear here."
               />
             ) : (
               tasks.map((task) => <TaskRow key={task.id} task={task} />)

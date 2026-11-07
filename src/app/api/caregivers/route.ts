@@ -54,10 +54,6 @@ export async function POST(request: Request) {
           error: err.detail || err.message,
           code: err.code,
           traceId: err.traceId,
-          hint:
-            err.status === 409
-              ? "Meridian caregiverId generator is stuck on CG-001. Update the auto-number sequence in Meridian Object Designer."
-              : undefined,
         },
         { status: err.status },
       );

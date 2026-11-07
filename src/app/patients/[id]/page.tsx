@@ -20,8 +20,11 @@ import {
   getPatientById,
   resolveCaregiverLabel,
 } from "@/lib/meridian/care-data";
+import { assertAuthorizedPatientAccess } from "@/lib/meridian/authorized-care";
+import { getSessionUser } from "@/lib/auth";
 import { getPageViewer } from "@/lib/viewer";
 import { formatDate, initials } from "@/lib/utils";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +34,27 @@ export default async function PatientProfilePage({
   params: Promise<{ id: string }>;
 }) {
   const viewer = await getPageViewer();
+  const profile = await getSessionUser();
+  if (!profile) redirect("/login");
   const { id } = await params;
+  const decoded = decodeURIComponent(id);
+
+  try {
+    await assertAuthorizedPatientAccess(
+      {
+        id: profile.id,
+        accountType: profile.accountType,
+        meridianPatientId: profile.meridianPatientId,
+        meridianPatientBusinessId: profile.meridianPatientBusinessId,
+        meridianCaregiverId: profile.meridianCaregiverId,
+        meridianCaregiverBusinessId: profile.meridianCaregiverBusinessId,
+      },
+      decoded,
+    );
+  } catch {
+    notFound();
+  }
+
   const {
     snapshot,
     patient,
@@ -42,7 +65,7 @@ export default async function PatientProfilePage({
     appointments,
     medications,
     notifications,
-  } = await getPatientById(decodeURIComponent(id));
+  } = await getPatientById(decoded);
 
   if (!patient) notFound();
 

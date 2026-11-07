@@ -72,11 +72,79 @@ export async function POST(request: Request) {
     let linked: {
       id: string;
       businessId?: string;
-      mode: "created" | "linked_by_exact_email" | "claimed_unlinked_family_caregiver";
+      mode:
+        | "created"
+        | "linked_by_exact_email"
+        | "claimed_unlinked_family_caregiver"
+        | "updated_existing_link";
       readBack: boolean;
     };
 
-    if (body.linkByExactEmail) {
+    // Never create another Meridian profile when this account is already linked.
+    const existingId = isPatient
+      ? row.meridian_patient_id
+      : row.meridian_caregiver_id;
+    if (existingId && !body.linkByExactEmail) {
+      if (isPatient) {
+        await sdk.updateRecord(
+          MERIDIAN_OBJECTS.patient,
+          existingId,
+          {
+            firstName: fields.firstName,
+            lastName: fields.lastName,
+            preferredName: fields.preferredName,
+            preferredLanguage: fields.preferredLanguage,
+            phoneNumber: fields.phoneNumber,
+            emailAddress: row.email,
+            portalAccessStatus: "Linked",
+          },
+          `CareCircle onboarding: update linked patient for ${row.email}`,
+        );
+        const saved = await readBackSaved(sdk, MERIDIAN_OBJECTS.patient, existingId);
+        const flat = flattenRecord(saved);
+        linked = {
+          id: existingId,
+          businessId:
+            pickString(flat, ["patientId"]) ||
+            row.meridian_patient_business_id ||
+            undefined,
+          mode: "updated_existing_link",
+          readBack: true,
+        };
+      } else {
+        await sdk.updateRecord(
+          MERIDIAN_OBJECTS.caregiver,
+          existingId,
+          {
+            firstName: fields.firstName,
+            lastName: fields.lastName,
+            preferredName: fields.preferredName,
+            preferredLanguage: fields.preferredLanguage,
+            phoneNumber: fields.phoneNumber,
+            emailAddress: row.email,
+            caregiverType: "Family Caregiver",
+            status: "Active",
+            portalAccessStatus: "Linked",
+          },
+          `CareCircle onboarding: update linked caregiver for ${row.email}`,
+        );
+        const saved = await readBackSaved(
+          sdk,
+          MERIDIAN_OBJECTS.caregiver,
+          existingId,
+        );
+        const flat = flattenRecord(saved);
+        linked = {
+          id: existingId,
+          businessId:
+            pickString(flat, ["caregiverId"]) ||
+            row.meridian_caregiver_business_id ||
+            undefined,
+          mode: "updated_existing_link",
+          readBack: true,
+        };
+      }
+    } else if (body.linkByExactEmail) {
       linked = isPatient
         ? await linkPatientByExactEmail(sdk, row.email, fields)
         : await linkCaregiverByExactEmail(sdk, row.email, fields);
@@ -86,8 +154,7 @@ export async function POST(request: Request) {
           ? await createPatient(sdk, row.email, fields)
           : await createCaregiver(sdk, row.email, fields);
       } catch (err) {
-        // Meridian still colliding on *-001 — fall back to exact-email link,
-        // then claim an unlinked Family Caregiver slot if needed.
+        // Fall back to exact-email link, then claim an unlinked Family Caregiver if needed.
         const conflict =
           err instanceof PlatformSDKError &&
           (err.status === 409 || /already exists/i.test(err.detail || err.message));

@@ -154,8 +154,9 @@ export function CreateTaskForm({
               className="h-11 w-full rounded-2xl border border-ink-100 bg-white px-3"
               value={assignedCaregiver}
               onChange={(e) => setAssignedCaregiver(e.target.value)}
+              required
             >
-              <option value="">Unassigned</option>
+              <option value="">Select caregiver *</option>
               {caregivers.map((c) => (
                 <option key={c.value} value={c.value}>
                   {c.label}
@@ -165,14 +166,15 @@ export function CreateTaskForm({
           </label>
           <label className="space-y-1 text-sm sm:col-span-2">
             <span className="text-ink-500">
-              Care plan / Plan (filtered by patient)
+              Care plan / Plan (required, filtered by patient)
             </span>
             <select
               className="h-11 w-full rounded-2xl border border-ink-100 bg-white px-3"
               value={carePlan}
               onChange={(e) => setCarePlan(e.target.value)}
+              required
             >
-              <option value="">None / Ninguno</option>
+              <option value="">Select care plan *</option>
               {filteredPlans.map((p) => (
                 <option key={p.value} value={p.value}>
                   {p.label}
@@ -187,7 +189,17 @@ export function CreateTaskForm({
             ) : null}
           </label>
           <div className="sm:col-span-2 flex flex-wrap items-center gap-3">
-            <Button type="submit" disabled={pending || !patients.length}>
+            <Button
+              type="submit"
+              disabled={
+                pending ||
+                !patients.length ||
+                !carePlan ||
+                !assignedCaregiver ||
+                !dueDate ||
+                !description.trim()
+              }
+            >
               {pending ? "Saving…" : "Create in Meridian"}
             </Button>
             {error ? (

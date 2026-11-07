@@ -6,10 +6,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { getSessionUser } from "@/lib/auth";
 import {
-  loadCareSnapshot,
   resolveCaregiverLabel,
   resolvePatientLabel,
 } from "@/lib/meridian/care-data";
+import { loadAuthorizedCareView } from "@/lib/meridian/authorized-care";
 import { getPageViewer } from "@/lib/viewer";
 import { getServerLocale } from "@/lib/i18n/locale";
 import { getDictionary } from "@/lib/i18n/dictionary";
@@ -24,44 +24,37 @@ export default async function PatientPortalPage() {
   const viewer = await getPageViewer();
   const profile = await getSessionUser();
   if (!profile) redirect("/login");
-  const snapshot = await loadCareSnapshot();
+  if (profile.accountType !== "patient") redirect("/");
 
-  const patientId =
-    profile.meridianPatientBusinessId || profile.meridianPatientId;
+  const view = await loadAuthorizedCareView({
+    id: profile.id,
+    accountType: profile.accountType,
+    meridianPatientId: profile.meridianPatientId,
+    meridianPatientBusinessId: profile.meridianPatientBusinessId,
+    meridianCaregiverId: profile.meridianCaregiverId,
+    meridianCaregiverBusinessId: profile.meridianCaregiverBusinessId,
+  });
 
-  const patient = snapshot.patients.find(
-    (p) => p.businessId === patientId || p.id === patientId,
-  );
-  const plans = snapshot.carePlans.filter(
-    (p) =>
-      p.patientRef === patient?.businessId || p.patientRef === patient?.id,
-  );
-  const appts = snapshot.appointments.filter(
-    (a) =>
-      a.patientRef === patient?.businessId || a.patientRef === patient?.id,
-  );
-  const tasks = snapshot.tasks
-    .filter(
-      (task) =>
-        task.patientRef === patient?.businessId ||
-        task.patientRef === patient?.id,
-    )
-    .slice(0, 5)
-    .map((task) => ({
-      ...task,
-      patientName: resolvePatientLabel(snapshot.patients, task.patientRef),
-      assignee: resolveCaregiverLabel(snapshot.caregivers, task.assigneeRef),
-    }));
-  const memberships = snapshot.memberships.filter(
-    (m) =>
-      m.patientRef === patient?.businessId || m.patientRef === patient?.id,
-  );
+  const patient = view.patients[0];
+  const tasks = view.tasks.slice(0, 5).map((task) => ({
+    ...task,
+    patientName: resolvePatientLabel(view.rawSnapshot.patients, task.patientRef),
+    assignee: resolveCaregiverLabel(
+      view.rawSnapshot.caregivers,
+      task.assigneeRef,
+    ),
+  }));
+  const journeyPatient =
+    patient?.businessId || patient?.id || profile.meridianPatientBusinessId;
 
   return (
     <AppShell
       locale={locale}
-      sourceLabel={snapshot.source === "meridian" ? "Meridian" : "Unavailable"}
+      sourceLabel={view.source === "meridian" ? "Meridian" : "Unavailable"}
       viewerName={viewer.verified ? viewer.name : undefined}
+      showLogout
+      accountType="patient"
+      accountRole="Patient"
     >
       <div className="space-y-6 animate-fadeUp">
         <div className="rounded-[2rem] border border-white/70 bg-gradient-to-br from-white via-strawberry-50 to-matcha-50 p-8 shadow-card">
@@ -70,7 +63,7 @@ export default async function PatientPortalPage() {
           </p>
           <h1 className="mt-2 text-3xl font-semibold text-ink-900">
             {locale === "es" ? "Hola" : "Hello"},{" "}
-            {patient?.name || profile?.firstName || "—"}
+            {patient?.name || profile.firstName || "—"}
           </h1>
           <p className="mt-2 text-ink-600">
             Care status: <strong>{patient?.status || "—"}</strong>
@@ -84,36 +77,44 @@ export default async function PatientPortalPage() {
           ) : null}
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard
-            label="Active Care Plan"
-            labelEs="Plan activo"
-            value={plans.filter((p) => /active/i.test(p.status)).length}
-            icon={HeartPulse}
-            tone="matcha"
-          />
-          <MetricCard
-            label="Appointments"
-            labelEs="Citas"
-            value={appts.length}
-            icon={CalendarDays}
-            tone="strawberry"
-          />
-          <MetricCard
-            label="Tasks"
-            labelEs="Tareas"
-            value={tasks.length}
-            icon={ClipboardList}
-            tone="matcha"
-          />
-          <MetricCard
-            label="Care Circle"
-            labelEs="Círculo"
-            value={memberships.length}
-            icon={Bell}
-            tone="strawberry"
-          />
-        </div>
+        {view.authError || view.loadingError ? (
+          <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {view.authError?.detail ||
+              view.loadingError ||
+              "Could not load Meridian care data."}
+          </p>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              label="Active Care Plan"
+              labelEs="Plan activo"
+              value={view.metrics.activeCarePlans}
+              icon={HeartPulse}
+              tone="matcha"
+            />
+            <MetricCard
+              label="Appointments"
+              labelEs="Citas"
+              value={view.appointments.length}
+              icon={CalendarDays}
+              tone="strawberry"
+            />
+            <MetricCard
+              label="Tasks"
+              labelEs="Tareas"
+              value={view.tasks.length}
+              icon={ClipboardList}
+              tone="matcha"
+            />
+            <MetricCard
+              label="Care Circle"
+              labelEs="Círculo"
+              value={view.memberships.length}
+              icon={Bell}
+              tone="strawberry"
+            />
+          </div>
+        )}
 
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="soft">
@@ -132,7 +133,18 @@ export default async function PatientPortalPage() {
             <Link href="/care-circle">{t.careCircle}</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link href="/care-journey?patient=PAT-001">{t.careJourney}</Link>
+            <Link
+              href={
+                journeyPatient
+                  ? `/care-journey?patient=${encodeURIComponent(journeyPatient)}`
+                  : "/care-journey"
+              }
+            >
+              {t.careJourney}
+            </Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/account">{t.account}</Link>
           </Button>
         </div>
 
@@ -142,7 +154,7 @@ export default async function PatientPortalPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {tasks.length === 0 ? (
-              <p className="text-sm text-ink-500">No tasks</p>
+              <p className="text-sm text-ink-500">No authorized tasks yet</p>
             ) : (
               tasks.map((task) => <TaskRow key={task.id} task={task} />)
             )}

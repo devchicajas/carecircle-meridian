@@ -35,15 +35,21 @@ export async function POST(request: Request) {
   }
 
   const pub = toPublicUser(user);
+  const redirectTo = !pub.onboarded
+    ? "/onboarding"
+    : pub.accountType === "patient"
+      ? "/portal/patient"
+      : "/";
   return NextResponse.json({
     ok: true,
-    redirectTo: pub.onboarded ? "/" : "/onboarding",
+    redirectTo,
     user: {
       id: pub.id,
       email: pub.email,
       firstName: pub.firstName,
       lastName: pub.lastName,
       onboarded: pub.onboarded,
+      accountType: pub.accountType,
     },
   });
 }

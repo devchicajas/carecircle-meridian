@@ -5,8 +5,6 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { MeridianCreateHint } from "@/components/care/meridian-create-hint";
-
 export function CreatePatientForm() {
   const router = useRouter();
   const [firstName, setFirstName] = useState("");
@@ -17,14 +15,14 @@ export function CreatePatientForm() {
   const [phone, setPhone] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hint, setHint] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [traceId, setTraceId] = useState<string | null>(null);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setPending(true);
     setError(null);
-    setHint(null);
+    setNote(null);
     setTraceId(null);
     try {
       const res = await fetch("/api/patients", {
@@ -42,11 +40,14 @@ export function CreatePatientForm() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setHint(data?.hint || null);
         setTraceId(data?.traceId || null);
         throw new Error(data?.error || data?.code || "Create failed");
       }
-      router.push(`/patients/${encodeURIComponent(data.patient.id)}`);
+      setNote(
+        data?.membershipNote ||
+          "Patient saved in Meridian. Care Circle activation may still be required.",
+      );
+      router.push(`/patients/add?created=${encodeURIComponent(data.patient.id)}`);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Create failed");
@@ -57,10 +58,9 @@ export function CreatePatientForm() {
 
   return (
     <div className="space-y-4">
-      <MeridianCreateHint />
       <Card>
         <CardHeader>
-          <CardTitle>New patient profile · Nuevo paciente</CardTitle>
+          <CardTitle>New loved one profile · Nuevo ser querido</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-2">
@@ -105,7 +105,7 @@ export function CreatePatientForm() {
                   {traceId ? ` · trace ${traceId}` : ""}
                 </p>
               ) : null}
-              {hint ? <p className="text-sm text-amber-800">{hint}</p> : null}
+              {note ? <p className="text-sm text-matcha-800">{note}</p> : null}
             </div>
           </form>
         </CardContent>

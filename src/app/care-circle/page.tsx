@@ -4,14 +4,16 @@ import { EmptyState } from "@/components/care/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  loadCareSnapshot,
   resolveCaregiverLabel,
   resolvePatientLabel,
 } from "@/lib/meridian/care-data";
+import { loadAuthorizedCareView } from "@/lib/meridian/authorized-care";
+import { getSessionUser } from "@/lib/auth";
 import { getPageViewer } from "@/lib/viewer";
 import { getServerLocale } from "@/lib/i18n/locale";
 import { getDictionary } from "@/lib/i18n/dictionary";
 import { formatDate } from "@/lib/utils";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -19,14 +21,28 @@ export default async function CareCirclePage() {
   const locale = await getServerLocale();
   const t = getDictionary(locale);
   const viewer = await getPageViewer();
-  const snapshot = await loadCareSnapshot();
+  const profile = await getSessionUser();
+  if (!profile) redirect("/login");
+
+  const view = await loadAuthorizedCareView({
+    id: profile.id,
+    accountType: profile.accountType,
+    meridianPatientId: profile.meridianPatientId,
+    meridianPatientBusinessId: profile.meridianPatientBusinessId,
+    meridianCaregiverId: profile.meridianCaregiverId,
+    meridianCaregiverBusinessId: profile.meridianCaregiverBusinessId,
+  });
 
   return (
     <AppShell
       locale={locale}
-      sourceLabel={snapshot.source === "meridian" ? "Meridian" : "Unavailable"}
-            viewerName={viewer.verified ? viewer.name : undefined}
+      sourceLabel={view.source === "meridian" ? "Meridian" : "Unavailable"}
+      viewerName={viewer.verified ? viewer.name : undefined}
       showLogout={viewer.verified}
+      accountType={viewer.accountType}
+      accountRole={
+        view.scope === "patient" ? "Patient" : "Family Caregiver"
+      }
     >
       <div className="space-y-6 animate-fadeUp">
         <div>
@@ -35,35 +51,47 @@ export default async function CareCirclePage() {
           </p>
           <h1 className="mt-2 text-3xl font-semibold text-ink-900">
             {locale === "es"
-              ? "Membresías del círculo"
-              : "Care circle memberships"}
+              ? "Membresías autorizadas"
+              : "Your Care Circle memberships"}
           </h1>
           <p className="mt-2 text-ink-600">
-            Meridian field: <code>membershipStatus</code>. New memberships
-            created through CareCircle default to Pending (activation is
-            Coordinator/Admin in Meridian).
+            Meridian <code>membershipStatus</code> supports{" "}
+            <strong>Active</strong> and <strong>Inactive</strong> only.
+            Inactive means a connection request is waiting for
+            coordinator/admin activation. Active memberships unlock My Loved
+            Ones.
           </p>
         </div>
 
         <StatusBanner
-          source={snapshot.source}
-          connected={snapshot.connected}
-          warnings={snapshot.warnings}
-          authError={snapshot.authError}
-          loadingError={snapshot.loadingError}
-          patientObject={snapshot.patientObject}
-          taskObject={snapshot.taskObject}
+          source={view.source}
+          connected={view.connected}
+          warnings={view.warnings}
+          authError={view.authError}
+          loadingError={view.loadingError}
+          patientObject={view.patientObject}
+          taskObject={view.taskObject}
         />
 
-        {snapshot.memberships.length === 0 ? (
+        {view.authError || view.loadingError ? (
           <EmptyState
-            title="No memberships"
-            titleEs="Sin membresías"
-            detail="Meridian object: careCircleMembership"
+            title="Could not load Care Circle"
+            titleEs="No se pudo cargar el círculo"
+            detail={view.authError?.detail || view.loadingError}
+          />
+        ) : view.memberships.length === 0 ? (
+          <EmptyState
+            title="No memberships for your account"
+            titleEs="Sin membresías para tu cuenta"
+            detail={
+              view.scope === "family_caregiver"
+                ? "Add a loved one or redeem a patient invite to create an Inactive membership request."
+                : "Share an invite code from Account so a caregiver can request connection."
+            }
           />
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
-            {snapshot.memberships.map((m) => (
+            {view.memberships.map((m) => (
               <Card key={m.id}>
                 <CardHeader className="flex-row items-center justify-between">
                   <CardTitle className="text-base">
@@ -78,13 +106,15 @@ export default async function CareCirclePage() {
                 <CardContent className="space-y-1 text-sm text-ink-600">
                   <p>
                     Patient:{" "}
-                    {resolvePatientLabel(snapshot.patients, m.patientRef) ||
-                      m.patientRef}
+                    {resolvePatientLabel(
+                      view.rawSnapshot.patients,
+                      m.patientRef,
+                    ) || m.patientRef}
                   </p>
                   <p>
                     Caregiver:{" "}
                     {resolveCaregiverLabel(
-                      snapshot.caregivers,
+                      view.rawSnapshot.caregivers,
                       m.caregiverRef,
                     ) || m.caregiverRef}
                   </p>
@@ -92,6 +122,11 @@ export default async function CareCirclePage() {
                   <p>
                     {formatDate(m.startDate)} → {formatDate(m.endDate) || "—"}
                   </p>
+                  {!/active/i.test(m.status) ? (
+                    <p className="text-amber-800">
+                      Waiting for Active status before loved-one access unlocks.
+                    </p>
+                  ) : null}
                 </CardContent>
               </Card>
             ))}

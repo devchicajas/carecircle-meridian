@@ -81,6 +81,7 @@ export function AppShell({
   locale: localeProp = "en",
   showLogout = false,
   accountType,
+  accountRole,
 }: {
   children: React.ReactNode;
   sourceLabel?: string;
@@ -88,6 +89,7 @@ export function AppShell({
   locale?: Locale;
   showLogout?: boolean;
   accountType?: "patient" | "family_caregiver";
+  accountRole?: string;
 }) {
   const pathname = usePathname();
   const { data: session } = useSession();
@@ -154,7 +156,10 @@ export function AppShell({
           <div className="flex flex-wrap items-center justify-end gap-2">
             <LanguageSwitcher locale={locale} />
             {viewerName ? (
-              <Badge variant="outline">{viewerName}</Badge>
+              <Badge variant="outline">
+                {viewerName}
+                {accountRole ? ` · ${accountRole}` : ""}
+              </Badge>
             ) : null}
             {sourceLabel ? (
               <Badge variant={sourceLabel === "Meridian" ? "matcha" : "warning"}>
@@ -169,7 +174,7 @@ export function AppShell({
           </div>
         </div>
 
-        <nav className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-4 pb-3 sm:px-6 lg:px-8">
+        <nav className="mx-auto flex max-w-7xl flex-wrap gap-1 px-4 pb-3 sm:px-6 lg:px-8">
           {visibleNav.map((item) => {
             const active =
               item.href === "/"

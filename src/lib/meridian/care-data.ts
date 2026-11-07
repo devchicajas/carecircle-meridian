@@ -617,12 +617,13 @@ export function lovedOnesForCaregiver(
   const patientRefs = new Set(
     snapshot.memberships
       .filter((m) => {
-        if (!m.caregiverRef) return false;
-        if (/revoked|inactive|ended/i.test(m.status || "")) return false;
-        if (aliases.has(m.caregiverRef)) return true;
-        return caregiver
-          ? matchesCaregiverRef(caregiver, m.caregiverRef)
-          : false;
+      if (!m.caregiverRef) return false;
+      // Meridian membershipStatus enum is Active | Inactive only.
+      if (!/^active$/i.test((m.status || "").trim())) return false;
+      if (aliases.has(m.caregiverRef)) return true;
+      return caregiver
+        ? matchesCaregiverRef(caregiver, m.caregiverRef)
+        : false;
       })
       .map((m) => m.patientRef)
       .filter(Boolean) as string[],
@@ -1183,7 +1184,8 @@ export async function createMembershipRecord(values: {
     });
   }
 
-  const status = values.membershipStatus || "Pending";
+  // Meridian accepts only Active | Inactive (no Pending).
+  const status = values.membershipStatus || "Inactive";
   if (/active/i.test(status)) {
     const { records } = await sdk.listRecords(
       MERIDIAN_OBJECTS.careCircleMembership,
@@ -1217,7 +1219,7 @@ export async function createMembershipRecord(values: {
     {
       patient: values.patient,
       caregiver: values.caregiver,
-      relationshipType: values.relationshipType,
+      relationshipType: values.relationshipType || "Family Member",
       membershipStatus: status,
       startDate: values.startDate,
       endDate: values.endDate,
