@@ -12,6 +12,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { StatusBanner } from "@/components/care/status-banner";
 import { TaskRow } from "@/components/care/task-row";
 import { EmptyState } from "@/components/care/empty-state";
+import { EditPatientForm } from "@/components/care/edit-patient-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -201,6 +202,8 @@ export default async function PatientProfilePage({
             </LinkedSection>
           </div>
         </section>
+
+        <EditPatientForm patient={patient} />
 
         <section className="grid gap-4 lg:grid-cols-3">
           <LinkedSection title="Care plans · Planes">

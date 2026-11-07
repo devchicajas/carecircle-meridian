@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { StatusBanner } from "@/components/care/status-banner";
 import { EmptyState } from "@/components/care/empty-state";
+import { CreateNotificationForm } from "@/components/care/create-notification-form";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -44,6 +45,17 @@ export default async function NotificationsPage() {
           loadingError={snapshot.loadingError}
           patientObject={snapshot.patientObject}
           taskObject={snapshot.taskObject}
+        />
+
+        <CreateNotificationForm
+          patients={snapshot.patients.map((p) => ({
+            value: p.businessId || p.id,
+            label: `${p.name}${p.businessId ? ` (${p.businessId})` : ""}`,
+          }))}
+          caregivers={snapshot.caregivers.map((c) => ({
+            value: c.businessId || c.id,
+            label: `${c.name}${c.businessId ? ` (${c.businessId})` : ""}`,
+          }))}
         />
 
         {snapshot.notifications.length === 0 ? (

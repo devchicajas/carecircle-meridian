@@ -64,13 +64,16 @@ export default async function DashboardPage() {
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <Button asChild size="lg">
-                <Link href="/patients">
-                  Patient directory / Directorio
+                <Link href="/enter">
+                  Demo login / Entrar
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </Button>
+              <Button asChild variant="outline" size="lg">
+                <Link href="/patients">Patient directory</Link>
+              </Button>
               {maria ? (
-                <Button asChild variant="outline" size="lg">
+                <Button asChild variant="soft" size="lg">
                   <Link href={`/patients/${encodeURIComponent(maria.id)}`}>
                     Open María González
                   </Link>

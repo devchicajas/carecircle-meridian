@@ -13,11 +13,14 @@ import {
   Pill,
   Bell,
   ClipboardPlus,
+  LogIn,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { DemoPersonaBadge } from "@/components/care/demo-persona-picker";
 
 const nav = [
+  { href: "/enter", label: "Demo Login", es: "Entrar", icon: LogIn },
   { href: "/", label: "Dashboard", es: "Panel", icon: LayoutDashboard },
   { href: "/patients", label: "Patients", es: "Pacientes", icon: Users },
   { href: "/caregivers", label: "Caregivers", es: "Cuidadores", icon: UserRound },
@@ -68,13 +71,14 @@ export function AppShell({
           </Link>
 
           <div className="flex flex-wrap items-center justify-end gap-2">
+            <DemoPersonaBadge />
             {viewerName ? (
               <Badge variant="outline">{viewerName}</Badge>
             ) : null}
             {sourceLabel ? (
               <Badge variant={sourceLabel === "Meridian" ? "matcha" : "warning"}>
                 {sourceLabel === "Meridian"
-                  ? "Live Meridian · read-only"
+                  ? "Live Meridian"
                   : "Meridian unavailable"}
               </Badge>
             ) : null}
