@@ -1,3 +1,4 @@
+import { NextResponse } from "next/server";
 import {
   getIdentity,
   requireIdentity,
@@ -28,7 +29,7 @@ export async function requireAppUser(request: Request) {
 export function privateJson(data: unknown, init: ResponseInit = {}) {
   const headers = new Headers(init.headers);
   headers.set("Cache-Control", "private, no-store");
-  return Response.json(data, { ...init, headers });
+  return NextResponse.json(data, { ...init, headers });
 }
 
 export async function getViewerFromHeaders(headerList: Headers) {

@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { StatusBanner } from "@/components/care/status-banner";
 import { EmptyState } from "@/components/care/empty-state";
+import { CreateCarePlanForm } from "@/components/care/create-care-plan-form";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -45,6 +46,23 @@ export default async function CarePlansPage() {
           loadingError={snapshot.loadingError}
           patientObject={snapshot.patientObject}
           taskObject={snapshot.taskObject}
+        />
+
+        <CreateCarePlanForm
+          patients={snapshot.patients.map((p) => ({
+            value: p.businessId || p.id,
+            label: `${p.name}${p.businessId ? ` (${p.businessId})` : ""}`,
+          }))}
+          coordinators={snapshot.caregivers
+            .filter(
+              (c) =>
+                /care coordinator/i.test(c.role || "") &&
+                /active/i.test(c.status),
+            )
+            .map((c) => ({
+              value: c.businessId || c.id,
+              label: `${c.name}${c.businessId ? ` (${c.businessId})` : ""}`,
+            }))}
         />
 
         {snapshot.carePlans.length === 0 ? (

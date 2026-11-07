@@ -6,6 +6,10 @@ import {
   recordEnvelopeId,
 } from "@/lib/meridian/records";
 import {
+  assertCaregiverAuthorizedForPatient,
+  canonicalCaregiverWriteRef,
+} from "@/lib/meridian/task-assignment";
+import {
   assertTaskPatientMatchesCarePlan,
   canonicalCarePlanWriteRef,
   canonicalPatientWriteRef,
@@ -619,10 +623,23 @@ export async function createCareTask(values: {
     });
   }
 
+  if (!values.dueDate?.trim()) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "DUE_DATE_REQUIRED",
+      detail: "Due Date is required for Care Tasks.",
+    });
+  }
+
   // Server-side CareCircle validation (not Meridian-global).
   const consistency = await assertTaskPatientMatchesCarePlan({
     patientRef: values.patient,
     carePlanRef: values.carePlan,
+    sdk,
+  });
+  const assignment = await assertCaregiverAuthorizedForPatient({
+    patientRef: values.patient,
+    caregiverRef: values.assignedCaregiver,
     sdk,
   });
 
@@ -631,10 +648,10 @@ export async function createCareTask(values: {
     description: values.description,
     priority: values.priority || "Medium",
     status: values.status || "Pending",
+    dueDate: values.dueDate,
   };
-  if (values.dueDate) payload.dueDate = values.dueDate;
-  if (values.assignedCaregiver) {
-    payload.assignedCaregiver = values.assignedCaregiver;
+  if (assignment.caregiver) {
+    payload.assignedCaregiver = canonicalCaregiverWriteRef(assignment.caregiver);
   }
   if (consistency.carePlan) {
     payload.carePlan = canonicalCarePlanWriteRef(consistency.carePlan);
@@ -725,14 +742,23 @@ export async function updateCareTask(
     });
   }
 
+  const nextAssignee =
+    patch.assignedCaregiver !== undefined
+      ? patch.assignedCaregiver || undefined
+      : existing.assigneeRef;
+
   const patientOrPlanChanging =
     patch.patient !== undefined || patch.carePlan !== undefined;
+  const assigneeChanging = patch.assignedCaregiver !== undefined;
+  const resultingRefsChanging =
+    patientOrPlanChanging || assigneeChanging || !!nextCarePlan || !!nextAssignee;
 
   let writePatient = nextPatient;
   let writeCarePlan = nextCarePlan;
+  let writeAssignee = nextAssignee;
 
-  if (patientOrPlanChanging || nextCarePlan) {
-    // Revalidate resulting Patient + Care Plan combination against Meridian.
+  if (resultingRefsChanging) {
+    // Revalidate the complete resulting Patient + Care Plan + Caregiver state.
     const consistency = await assertTaskPatientMatchesCarePlan({
       patientRef: nextPatient,
       carePlanRef: nextCarePlan,
@@ -741,6 +767,15 @@ export async function updateCareTask(
     writePatient = canonicalPatientWriteRef(consistency.patient);
     writeCarePlan = consistency.carePlan
       ? canonicalCarePlanWriteRef(consistency.carePlan)
+      : undefined;
+
+    const assignment = await assertCaregiverAuthorizedForPatient({
+      patientRef: nextPatient,
+      caregiverRef: nextAssignee,
+      sdk,
+    });
+    writeAssignee = assignment.caregiver
+      ? canonicalCaregiverWriteRef(assignment.caregiver)
       : undefined;
   }
 
@@ -754,13 +789,12 @@ export async function updateCareTask(
   if (patch.description !== undefined) values.description = patch.description;
   if (patch.priority !== undefined) values.priority = patch.priority;
   if (patch.dueDate !== undefined) values.dueDate = patch.dueDate;
-  if (patch.assignedCaregiver !== undefined) {
-    values.assignedCaregiver = patch.assignedCaregiver;
-  }
-  if (patientOrPlanChanging) {
+  if (patientOrPlanChanging || assigneeChanging) {
     values.patient = writePatient;
     if (writeCarePlan) values.carePlan = writeCarePlan;
     if (patch.carePlan === null) values.carePlan = "";
+    if (writeAssignee) values.assignedCaregiver = writeAssignee;
+    if (patch.assignedCaregiver === "") values.assignedCaregiver = "";
   }
 
   if (Object.keys(values).length === 0) {
@@ -823,4 +857,376 @@ export async function updateNotificationReadStatus(
     "CareCircle demo: update notification read status",
   );
   return normalizeNotification(updated as Record<string, unknown>);
+}
+
+function requireMeridianSdk() {
+  const sdk = createPlatformSDKFromEnv();
+  if (!sdk) {
+    throw new PlatformSDKError({
+      status: 503,
+      code: "MISSING_API_KEY",
+      detail: "MERIDIAN_API_KEY required.",
+    });
+  }
+  return sdk;
+}
+
+async function readBack(
+  objectName: string,
+  id: string,
+): Promise<Record<string, unknown>> {
+  const sdk = requireMeridianSdk();
+  const { records } = await sdk.listRecords(objectName, { limit: 200 });
+  const saved = (records as Record<string, unknown>[]).find(
+    (row) => String(row.id) === id,
+  );
+  if (!saved) {
+    throw new PlatformSDKError({
+      status: 502,
+      code: "READBACK_FAILED",
+      detail: `${objectName} write succeeded but read-back failed.`,
+    });
+  }
+  return saved;
+}
+
+export async function createCarePlanRecord(values: {
+  patient: string;
+  recoveryGoals: string;
+  status?: string;
+  startDate?: string;
+  reviewDate?: string;
+  dischargeDate?: string;
+  assignedCoordinator?: string;
+}) {
+  const sdk = requireMeridianSdk();
+  if (!values.recoveryGoals?.trim()) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "RECOVERY_GOALS_REQUIRED",
+      detail: "Recovery Goals are required.",
+    });
+  }
+  if (
+    values.startDate &&
+    values.reviewDate &&
+    values.reviewDate < values.startDate
+  ) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "REVIEW_BEFORE_START",
+      detail: "Review Date cannot be earlier than Start Date.",
+    });
+  }
+
+  // Coordinator must be Active Care Coordinator when provided.
+  if (values.assignedCoordinator) {
+    const { records } = await sdk.listRecords(MERIDIAN_OBJECTS.caregiver, {
+      limit: 200,
+    });
+    const match = (records as Record<string, unknown>[]).find((row) => {
+      const f = flattenRecord(row);
+      const id = recordEnvelopeId(row);
+      const bid = pickString(f, ["caregiverId"]);
+      return (
+        values.assignedCoordinator === id ||
+        values.assignedCoordinator === bid
+      );
+    });
+    if (!match) {
+      throw new PlatformSDKError({
+        status: 422,
+        code: "COORDINATOR_NOT_FOUND",
+        detail: "Assigned Coordinator was not found in Meridian.",
+      });
+    }
+    const f = flattenRecord(match);
+    const type = pickString(f, ["caregiverType"]) || "";
+    const status = pickString(f, ["status"]) || "";
+    if (!/care coordinator/i.test(type) || !/active/i.test(status)) {
+      throw new PlatformSDKError({
+        status: 422,
+        code: "COORDINATOR_INELIGIBLE",
+        detail:
+          "Assigned Coordinator must be an Active Caregiver with type Care Coordinator.",
+      });
+    }
+  }
+
+  const created = await sdk.createRecord(
+    MERIDIAN_OBJECTS.carePlan,
+    {
+      patient: values.patient,
+      recoveryGoals: values.recoveryGoals,
+      status: values.status || "Active",
+      startDate: values.startDate,
+      reviewDate: values.reviewDate,
+      dischargeDate: values.dischargeDate,
+      assignedCoordinator: values.assignedCoordinator,
+    },
+    "CareCircle: create care plan",
+  );
+  const id = recordEnvelopeId(created as Record<string, unknown>);
+  return normalizeCarePlan(await readBack(MERIDIAN_OBJECTS.carePlan, id));
+}
+
+export async function updateCarePlanRecord(
+  id: string,
+  patch: {
+    recoveryGoals?: string;
+    status?: string;
+    reviewDate?: string;
+    assignedCoordinator?: string;
+  },
+) {
+  const sdk = requireMeridianSdk();
+  const updated = await sdk.updateRecord(
+    MERIDIAN_OBJECTS.carePlan,
+    id,
+    patch,
+    "CareCircle: update care plan",
+  );
+  const envelopeId = recordEnvelopeId(updated as Record<string, unknown>) || id;
+  return normalizeCarePlan(
+    await readBack(MERIDIAN_OBJECTS.carePlan, envelopeId),
+  );
+}
+
+export async function createAppointmentRecord(values: {
+  patient: string;
+  appointmentDateTime: string;
+  appointmentType?: string;
+  provider?: string;
+  location?: string;
+  status?: string;
+  notes?: string;
+}) {
+  const sdk = requireMeridianSdk();
+  if (!values.appointmentDateTime?.trim()) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "APPOINTMENT_DATETIME_REQUIRED",
+      detail: "Appointment Date & Time is required.",
+    });
+  }
+  if (/cancel/i.test(values.status || "") && !values.notes?.trim()) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "NOTES_REQUIRED_WHEN_CANCELLED",
+      detail: "Notes are required when Status is Cancelled.",
+    });
+  }
+  const created = await sdk.createRecord(
+    MERIDIAN_OBJECTS.appointment,
+    {
+      patient: values.patient,
+      appointmentDateTime: values.appointmentDateTime,
+      appointmentType: values.appointmentType,
+      provider: values.provider,
+      location: values.location,
+      status: values.status || "Scheduled",
+      notes: values.notes,
+    },
+    "CareCircle: create appointment",
+  );
+  const id = recordEnvelopeId(created as Record<string, unknown>);
+  return normalizeAppointment(
+    await readBack(MERIDIAN_OBJECTS.appointment, id),
+  );
+}
+
+export async function updateAppointmentRecord(
+  id: string,
+  patch: {
+    status?: string;
+    notes?: string;
+    appointmentDateTime?: string;
+    location?: string;
+  },
+) {
+  const sdk = requireMeridianSdk();
+  const { records } = await sdk.listRecords(MERIDIAN_OBJECTS.appointment, {
+    limit: 200,
+  });
+  const existing = (records as Record<string, unknown>[]).find(
+    (row) => String(row.id) === id,
+  );
+  if (!existing) {
+    throw new PlatformSDKError({
+      status: 404,
+      code: "NOT_FOUND",
+      detail: `Appointment ${id} not found.`,
+    });
+  }
+  const current = normalizeAppointment(existing);
+  const nextStatus = patch.status ?? current.status;
+  const nextNotes = patch.notes ?? current.notes;
+  if (/cancel/i.test(nextStatus) && !nextNotes?.trim()) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "NOTES_REQUIRED_WHEN_CANCELLED",
+      detail: "Notes are required when Status is Cancelled.",
+    });
+  }
+  await sdk.updateRecord(
+    MERIDIAN_OBJECTS.appointment,
+    id,
+    patch,
+    "CareCircle: update appointment",
+  );
+  return normalizeAppointment(await readBack(MERIDIAN_OBJECTS.appointment, id));
+}
+
+export async function createMembershipRecord(values: {
+  patient: string;
+  caregiver: string;
+  relationshipType?: string;
+  membershipStatus?: string;
+  startDate?: string;
+  endDate?: string;
+}) {
+  const sdk = requireMeridianSdk();
+  if (
+    values.startDate &&
+    values.endDate &&
+    values.endDate < values.startDate
+  ) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "END_BEFORE_START",
+      detail: "End Date must be on or after Start Date.",
+    });
+  }
+
+  const status = values.membershipStatus || "Pending";
+  if (/active/i.test(status)) {
+    const { records } = await sdk.listRecords(
+      MERIDIAN_OBJECTS.careCircleMembership,
+      { limit: 200 },
+    );
+    const duplicate = (records as Record<string, unknown>[]).some((row) => {
+      const f = flattenRecord(row);
+      const st = pickString(f, ["membershipStatus", "status"]) || "";
+      return (
+        /active/i.test(st) &&
+        (pickString(f, ["patient"]) === values.patient ||
+          pickString(f, ["patient"])?.toLowerCase() ===
+            values.patient.toLowerCase()) &&
+        (pickString(f, ["caregiver"]) === values.caregiver ||
+          pickString(f, ["caregiver"])?.toLowerCase() ===
+            values.caregiver.toLowerCase())
+      );
+    });
+    if (duplicate) {
+      throw new PlatformSDKError({
+        status: 422,
+        code: "DUPLICATE_ACTIVE_MEMBERSHIP",
+        detail:
+          "Only one Active membership per Patient/Caregiver pair is allowed.",
+      });
+    }
+  }
+
+  const created = await sdk.createRecord(
+    MERIDIAN_OBJECTS.careCircleMembership,
+    {
+      patient: values.patient,
+      caregiver: values.caregiver,
+      relationshipType: values.relationshipType,
+      membershipStatus: status,
+      startDate: values.startDate,
+      endDate: values.endDate,
+    },
+    "CareCircle: create care circle membership",
+  );
+  const id = recordEnvelopeId(created as Record<string, unknown>);
+  return normalizeMembership(
+    await readBack(MERIDIAN_OBJECTS.careCircleMembership, id),
+  );
+}
+
+export type CareJourneyEvent = {
+  id: string;
+  date: string;
+  title: string;
+  description: string;
+  status: string;
+  caregiver?: string;
+  href?: string;
+  kind: "carePlan" | "appointment" | "careTask" | "notification";
+};
+
+export function buildCareJourney(
+  snapshot: CareSnapshot,
+  patientRef?: string,
+): CareJourneyEvent[] {
+  const events: CareJourneyEvent[] = [];
+  const matchPatient = (ref?: string) => {
+    if (!patientRef) return true;
+    if (!ref) return false;
+    return (
+      ref === patientRef ||
+      ref.toLowerCase() === patientRef.toLowerCase() ||
+      snapshot.patients.some(
+        (p) =>
+          (p.businessId === patientRef || p.id === patientRef) &&
+          (p.businessId === ref || p.id === ref),
+      )
+    );
+  };
+
+  for (const plan of snapshot.carePlans) {
+    if (!matchPatient(plan.patientRef)) continue;
+    events.push({
+      id: `plan-${plan.id}`,
+      date: plan.startDate || plan.reviewDate || "",
+      title: `Care Plan ${plan.businessId || plan.id}`,
+      description: plan.recoveryGoals || plan.status,
+      status: plan.status,
+      caregiver: plan.assignedCoordinator,
+      href: "/care-plans",
+      kind: "carePlan",
+    });
+  }
+  for (const appt of snapshot.appointments) {
+    if (!matchPatient(appt.patientRef)) continue;
+    events.push({
+      id: `appt-${appt.id}`,
+      date: appt.dateTime || "",
+      title: appt.type || "Appointment",
+      description: [appt.provider, appt.location].filter(Boolean).join(" · "),
+      status: appt.status,
+      href: "/appointments",
+      kind: "appointment",
+    });
+  }
+  for (const task of snapshot.tasks) {
+    if (!matchPatient(task.patientRef)) continue;
+    events.push({
+      id: `task-${task.id}`,
+      date: task.dueAt || task.completedOn || "",
+      title: task.title,
+      description: `Priority: ${task.priority || "—"}`,
+      status: task.status,
+      caregiver: resolveCaregiverLabel(snapshot.caregivers, task.assigneeRef),
+      href: "/tasks",
+      kind: "careTask",
+    });
+  }
+  for (const note of snapshot.notifications) {
+    if (!matchPatient(note.patientRef)) continue;
+    events.push({
+      id: `note-${note.id}`,
+      date: note.createdAt || "",
+      title: note.notificationType || "Notification",
+      description: note.message,
+      status: note.status,
+      href: "/notifications",
+      kind: "notification",
+    });
+  }
+
+  return events
+    .filter((e) => e.date)
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
 }

@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { StatusBanner } from "@/components/care/status-banner";
 import { EmptyState } from "@/components/care/empty-state";
+import { CreateAppointmentForm } from "@/components/care/create-appointment-form";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -45,6 +46,13 @@ export default async function AppointmentsPage() {
           loadingError={snapshot.loadingError}
           patientObject={snapshot.patientObject}
           taskObject={snapshot.taskObject}
+        />
+
+        <CreateAppointmentForm
+          patients={snapshot.patients.map((p) => ({
+            value: p.businessId || p.id,
+            label: `${p.name}${p.businessId ? ` (${p.businessId})` : ""}`,
+          }))}
         />
 
         {snapshot.appointments.length === 0 ? (

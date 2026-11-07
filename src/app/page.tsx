@@ -56,18 +56,21 @@ export default async function DashboardPage() {
               Caregiver Dashboard · Panel del Cuidador
             </p>
             <h1 className="mt-3 max-w-2xl text-balance text-3xl font-semibold tracking-tight text-ink-900 sm:text-4xl">
-              Calm clarity for every care circle.
+              Better Care, Together.
             </h1>
             <p className="mt-3 max-w-2xl text-base text-ink-600">
-              Live Meridian records power this overview — patients, plans,
-              appointments, and tasks from your CareCircle tenant.
+              Keep your loved ones&apos; appointments, responsibilities, and care
+              plans organized in one place — powered by live Meridian records.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <Button asChild size="lg">
-                <Link href="/enter">
-                  Demo login / Entrar
+                <Link href="/login">
+                  Log in / Entrar
                   <ArrowRight className="h-4 w-4" />
                 </Link>
+              </Button>
+              <Button asChild variant="outline" size="lg">
+                <Link href="/signup">Sign up</Link>
               </Button>
               <Button asChild variant="outline" size="lg">
                 <Link href="/patients">Patient directory</Link>

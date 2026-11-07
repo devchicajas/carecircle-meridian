@@ -69,7 +69,7 @@ export function CreateTaskForm({
           patient,
           description,
           priority,
-          dueDate: dueDate || undefined,
+          dueDate,
           assignedCaregiver: assignedCaregiver || undefined,
           carePlan: carePlan || undefined,
           status: "Pending",
@@ -140,11 +140,12 @@ export function CreateTaskForm({
             />
           </label>
           <label className="space-y-1 text-sm">
-            <span className="text-ink-500">Due date / Fecha</span>
+            <span className="text-ink-500">Due date / Fecha *</span>
             <Input
               type="date"
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
+              required
             />
           </label>
           <label className="space-y-1 text-sm">

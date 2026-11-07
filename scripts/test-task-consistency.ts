@@ -91,6 +91,7 @@ async function main() {
       description: "SHOULD NOT PERSIST — mismatched patient/plan probe",
       priority: "Low",
       status: "Pending",
+      dueDate: new Date().toISOString().slice(0, 10),
     });
   } catch (err) {
     createMismatch = err;
@@ -202,6 +203,47 @@ async function main() {
   console.log(
     "✓ updateCareTask blocked mismatched Patient/Care Plan change",
   );
+
+  // Caregiver membership authorization (PAT-001 + CG-004 has no Active membership).
+  const {
+    assertCaregiverAuthorizedForPatient,
+    CAREGIVER_NOT_AUTHORIZED,
+  } = await import("../src/lib/meridian/task-assignment");
+  let caregiverBlocked: unknown = null;
+  try {
+    await assertCaregiverAuthorizedForPatient({
+      patientRef: "PAT-001",
+      caregiverRef: "CG-004",
+      sdk,
+    });
+  } catch (err) {
+    caregiverBlocked = err;
+  }
+  assert(
+    caregiverBlocked instanceof TaskConsistencyError,
+    "unauthorized caregiver should throw",
+  );
+  assert(
+    (caregiverBlocked as InstanceType<typeof TaskConsistencyError>).code ===
+      CAREGIVER_NOT_AUTHORIZED.code,
+    "caregiver not authorized code",
+  );
+  console.log("✓ unauthorized caregiver assignment blocked", {
+    error: (caregiverBlocked as InstanceType<typeof TaskConsistencyError>).error,
+    errorEs: (caregiverBlocked as InstanceType<typeof TaskConsistencyError>)
+      .errorEs,
+  });
+
+  const okAssign = await assertCaregiverAuthorizedForPatient({
+    patientRef: "PAT-001",
+    caregiverRef: "CG-001",
+    sdk,
+  });
+  assert(okAssign.membership, "CG-001 should have Active membership for PAT-001");
+  console.log("✓ authorized caregiver assignment allowed", {
+    caregiver: okAssign.caregiver?.businessId,
+    membership: okAssign.membership?.businessId,
+  });
 
   console.log("\nAll CareCircle Patient–Care Plan consistency tests passed.");
   console.log(

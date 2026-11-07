@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   HeartHandshake,
   LayoutDashboard,
@@ -14,13 +15,17 @@ import {
   Bell,
   ClipboardPlus,
   LogIn,
+  Route,
+  CircleUserRound,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { DemoPersonaBadge } from "@/components/care/demo-persona-picker";
+import { LanguageSwitcher } from "@/components/i18n/language-switcher";
+import type { Locale } from "@/lib/i18n/dictionary";
 
 const nav = [
-  { href: "/enter", label: "Demo Login", es: "Entrar", icon: LogIn },
+  { href: "/login", label: "Log In", es: "Entrar", icon: LogIn },
   { href: "/", label: "Dashboard", es: "Panel", icon: LayoutDashboard },
   { href: "/patients", label: "Patients", es: "Pacientes", icon: Users },
   { href: "/caregivers", label: "Caregivers", es: "Cuidadores", icon: UserRound },
@@ -28,19 +33,36 @@ const nav = [
   { href: "/appointments", label: "Appointments", es: "Citas", icon: CalendarDays },
   { href: "/medications", label: "Medications", es: "Medicamentos", icon: Pill },
   { href: "/tasks", label: "Care Tasks", es: "Tareas", icon: ClipboardList },
+  { href: "/care-circle", label: "Care Circle", es: "Círculo", icon: Users },
+  { href: "/care-journey", label: "Care Journey", es: "Seguimiento", icon: Route },
   { href: "/notifications", label: "Alerts", es: "Avisos", icon: Bell },
+  { href: "/account", label: "Account", es: "Cuenta", icon: CircleUserRound },
 ];
 
 export function AppShell({
   children,
   sourceLabel,
   viewerName,
+  locale: localeProp = "en",
 }: {
   children: React.ReactNode;
   sourceLabel?: string;
   viewerName?: string;
+  locale?: Locale;
 }) {
   const pathname = usePathname();
+  const [locale, setLocale] = useState<Locale>(localeProp);
+
+  useEffect(() => {
+    setLocale(localeProp);
+  }, [localeProp]);
+
+  useEffect(() => {
+    const match = document.cookie.match(/(?:^|; )carecircle_locale=(en|es)/);
+    if (match?.[1] === "en" || match?.[1] === "es") {
+      setLocale(match[1]);
+    }
+  }, [pathname]);
 
   return (
     <div className="min-h-screen">
@@ -65,12 +87,15 @@ export function AppShell({
               </div>
               <div className="flex items-center gap-2 text-xs text-ink-500">
                 <Sparkles className="h-3 w-3 text-matcha-600" />
-                Caregiver command center
+                {locale === "es"
+                  ? "Mejor cuidado, juntos."
+                  : "Better Care, Together."}
               </div>
             </div>
           </Link>
 
           <div className="flex flex-wrap items-center justify-end gap-2">
+            <LanguageSwitcher locale={locale} />
             <DemoPersonaBadge />
             {viewerName ? (
               <Badge variant="outline">{viewerName}</Badge>
@@ -104,14 +129,14 @@ export function AppShell({
                 )}
               >
                 <Icon className="h-4 w-4" />
-                <span>{item.label}</span>
+                <span>{locale === "es" ? item.es : item.label}</span>
                 <span
                   className={cn(
                     "hidden text-xs lg:inline",
                     active ? "text-white/70" : "text-ink-400",
                   )}
                 >
-                  / {item.es}
+                  / {locale === "es" ? item.label : item.es}
                 </span>
               </Link>
             );
