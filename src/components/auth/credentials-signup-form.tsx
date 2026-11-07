@@ -11,10 +11,11 @@ export function CredentialsSignupForm({ locale }: { locale: "en" | "es" }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [exists, setExists] = useState(false);
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
-    email: "",
+    email: "jasmin@example.com",
     password: "",
     confirmPassword: "",
     preferredLanguage: "English",
@@ -26,16 +27,53 @@ export function CredentialsSignupForm({ locale }: { locale: "en" | "es" }) {
     e.preventDefault();
     setPending(true);
     setError(null);
+    setExists(false);
     try {
+      if (!form.termsAccepted) {
+        throw new Error(
+          locale === "es"
+            ? "Debes aceptar los términos de la demo."
+            : "Please accept the demo terms to continue.",
+        );
+      }
+      if (form.password !== form.confirmPassword) {
+        throw new Error(
+          locale === "es"
+            ? "La contraseña y la confirmación no coinciden."
+            : "Password and confirm password do not match.",
+        );
+      }
+      if (form.password.length < 8) {
+        throw new Error(
+          locale === "es"
+            ? "La contraseña debe tener al menos 8 caracteres."
+            : "Password must be at least 8 characters.",
+        );
+      }
+
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          email: form.email.trim(),
+          termsAccepted: form.termsAccepted,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
+        if (res.status === 409) {
+          setExists(true);
+          throw new Error(
+            data?.error ||
+              (locale === "es"
+                ? "Esta cuenta ya existe. Inicia sesión."
+                : "This account already exists. Please log in."),
+          );
+        }
         throw new Error(data?.error || `Signup failed (${res.status})`);
       }
+
       const signedIn = await signIn("credentials", {
         email: form.email.trim(),
         password: form.password,
@@ -44,8 +82,8 @@ export function CredentialsSignupForm({ locale }: { locale: "en" | "es" }) {
       if (!signedIn || signedIn.error) {
         throw new Error(
           locale === "es"
-            ? "Cuenta creada, pero el inicio de sesión automático falló. Ve a Log in."
-            : "Account created, but automatic sign-in failed. Please log in.",
+            ? "Cuenta creada, pero el inicio de sesión automático falló. Usa Log in."
+            : "Account created, but automatic sign-in failed. Use Log in.",
         );
       }
       router.push(data.redirectTo || "/onboarding");
@@ -61,8 +99,8 @@ export function CredentialsSignupForm({ locale }: { locale: "en" | "es" }) {
     <form onSubmit={onSubmit} className="space-y-4">
       <p className="rounded-2xl border border-matcha-200 bg-matcha-50/80 p-3 text-xs text-ink-700">
         {locale === "es"
-          ? "Entorno de demostración controlado: usa un correo como jasmin@example.com. No se envía verificación por email. Las credenciales se almacenan con hash seguro (no en Meridian)."
-          : "Controlled demo environment: use an email like jasmin@example.com. No verification email is sent. Credentials are stored with a secure hash (not in Meridian)."}
+          ? "Demo controlada: usa un correo como jasmin@example.com. Sin verificación por email. Las contraseñas se guardan con hash seguro (no en Meridian)."
+          : "Controlled demo: use an email like jasmin@example.com. No verification email. Passwords are stored with a secure hash (not in Meridian)."}
       </p>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -70,6 +108,7 @@ export function CredentialsSignupForm({ locale }: { locale: "en" | "es" }) {
           <span>First Name / Nombre *</span>
           <Input
             required
+            name="firstName"
             value={form.firstName}
             onChange={(e) => setForm({ ...form, firstName: e.target.value })}
           />
@@ -78,6 +117,7 @@ export function CredentialsSignupForm({ locale }: { locale: "en" | "es" }) {
           <span>Last Name / Apellido *</span>
           <Input
             required
+            name="lastName"
             value={form.lastName}
             onChange={(e) => setForm({ ...form, lastName: e.target.value })}
           />
@@ -89,6 +129,7 @@ export function CredentialsSignupForm({ locale }: { locale: "en" | "es" }) {
         <Input
           type="email"
           required
+          name="email"
           autoComplete="email"
           placeholder="jasmin@example.com"
           value={form.email}
@@ -98,10 +139,11 @@ export function CredentialsSignupForm({ locale }: { locale: "en" | "es" }) {
 
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="space-y-1 text-sm">
-          <span>Password *</span>
+          <span>Password * (min 8)</span>
           <Input
             type="password"
             required
+            name="password"
             autoComplete="new-password"
             minLength={8}
             value={form.password}
@@ -113,6 +155,7 @@ export function CredentialsSignupForm({ locale }: { locale: "en" | "es" }) {
           <Input
             type="password"
             required
+            name="confirmPassword"
             autoComplete="new-password"
             minLength={8}
             value={form.confirmPassword}
@@ -157,7 +200,7 @@ export function CredentialsSignupForm({ locale }: { locale: "en" | "es" }) {
       <label className="flex items-start gap-2 text-sm text-ink-700">
         <input
           type="checkbox"
-          className="mt-1"
+          className="mt-1 h-4 w-4 accent-matcha-600"
           checked={form.termsAccepted}
           onChange={(e) =>
             setForm({ ...form, termsAccepted: e.target.checked })
@@ -170,7 +213,20 @@ export function CredentialsSignupForm({ locale }: { locale: "en" | "es" }) {
         </span>
       </label>
 
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? (
+        <div className="space-y-2 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <p>{error}</p>
+          {exists ? (
+            <Button asChild variant="outline" size="sm">
+              <Link
+                href={`/login?email=${encodeURIComponent(form.email.trim())}`}
+              >
+                {locale === "es" ? "Ir a iniciar sesión" : "Go to Log in"}
+              </Link>
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       <Button type="submit" className="w-full" size="lg" disabled={pending}>
         {pending
@@ -184,7 +240,10 @@ export function CredentialsSignupForm({ locale }: { locale: "en" | "es" }) {
 
       <p className="text-center text-sm text-ink-500">
         {locale === "es" ? "¿Ya tienes cuenta?" : "Already have an account?"}{" "}
-        <Link href="/login" className="text-strawberry-700 underline">
+        <Link
+          href="/login"
+          className="font-medium text-strawberry-700 underline"
+        >
           {locale === "es" ? "Iniciar sesión" : "Log in"}
         </Link>
       </p>

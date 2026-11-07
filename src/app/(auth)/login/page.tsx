@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { CredentialsLoginForm } from "@/components/auth/credentials-login-form";
@@ -24,7 +25,9 @@ export default async function LoginPage() {
           : "Sign in with your CareCircle email and password."
       }
     >
-      <CredentialsLoginForm locale={locale} />
+      <Suspense fallback={<p className="text-sm text-ink-500">Loading…</p>}>
+        <CredentialsLoginForm locale={locale} />
+      </Suspense>
     </AuthShell>
   );
 }
