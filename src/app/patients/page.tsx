@@ -2,25 +2,36 @@ import { AppShell } from "@/components/layout/app-shell";
 import { PatientDirectory } from "@/components/care/patient-directory";
 import { StatusBanner } from "@/components/care/status-banner";
 import { loadCareSnapshot } from "@/lib/meridian/care-data";
+import { getPageViewer } from "@/lib/viewer";
 
 export const dynamic = "force-dynamic";
 
 export default async function PatientsPage() {
+  const viewer = await getPageViewer();
   const snapshot = await loadCareSnapshot();
 
   return (
-    <AppShell sourceLabel={snapshot.source === "meridian" ? "Meridian" : "Demo"}>
+    <AppShell
+      sourceLabel={snapshot.source === "meridian" ? "Meridian" : "Unavailable"}
+      viewerName={
+        viewer.verified
+          ? viewer.simulated
+            ? `${viewer.name} (simulated)`
+            : viewer.name
+          : undefined
+      }
+    >
       <div className="space-y-6 animate-fadeUp">
         <div>
           <p className="text-sm font-medium uppercase tracking-[0.18em] text-matcha-700">
             Patient Directory · Directorio de Pacientes
           </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink-900">
-            Fictional demo patients from your care circle
+            Live Meridian patients
           </h1>
           <p className="mt-2 max-w-2xl text-ink-600">
-            Search by name and filter by status. Profiles open Meridian-backed
-            details when the tenant API key is present.
+            Search by name and filter by case status. Profiles open linked care
+            records from the same Meridian tenant.
           </p>
         </div>
 
@@ -28,6 +39,8 @@ export default async function PatientsPage() {
           source={snapshot.source}
           connected={snapshot.connected}
           warnings={snapshot.warnings}
+          authError={snapshot.authError}
+          loadingError={snapshot.loadingError}
           patientObject={snapshot.patientObject}
           taskObject={snapshot.taskObject}
         />

@@ -36,7 +36,9 @@ export function PatientCard({ patient }: { patient: Patient }) {
 
           <div className="flex flex-wrap gap-2">
             <Badge variant={statusVariant}>{patient.status}</Badge>
-            {patient.age ? <Badge variant="outline">{patient.age} yrs</Badge> : null}
+            {patient.language ? (
+              <Badge variant="outline">{patient.language}</Badge>
+            ) : null}
           </div>
 
           <div className="mt-auto space-y-2 text-sm text-ink-600">

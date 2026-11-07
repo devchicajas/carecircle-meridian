@@ -1,3 +1,4 @@
+import { EXPOSED_OBJECT_NAMES, MERIDIAN_OBJECTS } from "@/lib/meridian/objects";
 import {
   createPlatformSDKFromEnv,
   PlatformSDK,
@@ -9,53 +10,32 @@ export type DiscoveredObject = {
   path: string;
   methods: string[];
   operations: string[];
+  readOnly: boolean;
 };
 
 export type CareCircleSchema = {
-  source: "openapi" | "env-override" | "heuristic";
+  source: "openapi" | "configured" | "unavailable";
   objects: DiscoveredObject[];
-  patientObject: string | null;
-  taskObject: string | null;
+  patientObject: string;
+  caregiverObject: string;
+  carePlanObject: string;
+  appointmentObject: string;
+  medicationObject: string;
+  taskObject: string;
+  notificationObject: string;
   warnings: string[];
   connected: boolean;
+  authError?: {
+    status: number;
+    code: string;
+    detail?: string;
+    traceId?: string;
+  };
+  writeOpsNeeded: string[];
 };
-
-const PATIENT_HINTS = [
-  "patient",
-  "paciente",
-  "care_recipient",
-  "carerecipient",
-  "client",
-  "member",
-  "elder",
-];
-
-const TASK_HINTS = [
-  "task",
-  "tarea",
-  "care_task",
-  "caretask",
-  "care_plan",
-  "careplan",
-  "todo",
-  "assignment",
-  "actividad",
-  "activity",
-];
 
 function unique<T>(items: T[]) {
   return [...new Set(items)];
-}
-
-function scoreName(name: string, hints: string[]) {
-  const n = name.toLowerCase().replace(/[\s_-]+/g, "");
-  let score = 0;
-  for (const hint of hints) {
-    const h = hint.replace(/[\s_-]+/g, "");
-    if (n === h) score += 100;
-    else if (n.includes(h)) score += 40;
-  }
-  return score;
 }
 
 function parseOpenApiObjects(spec: unknown): DiscoveredObject[] {
@@ -66,22 +46,9 @@ function parseOpenApiObjects(spec: unknown): DiscoveredObject[] {
   const byObject = new Map<string, DiscoveredObject>();
 
   for (const [path, methods] of Object.entries(paths)) {
-    const match = path.match(
-      /\/api\/ext\/v1\/objects\/(?:\{[^}]+\}|([^/{]+))(?:\/|$)/,
-    );
+    const match = path.match(/\/api\/ext\/v1\/objects\/([^/{]+)(?:\/|$)/);
     if (!match) continue;
-    // Prefer concrete object names over path params
-    let name = match[1];
-    if (!name) {
-      // Look for x-helios / extension hints
-      const firstOp = Object.values(methods ?? {})[0] as
-        | { "x-helios-object"?: string; "x-meridian-object"?: string }
-        | undefined;
-      name =
-        firstOp?.["x-helios-object"] ||
-        firstOp?.["x-meridian-object"] ||
-        "";
-    }
+    const name = match[1];
     if (!name || name.startsWith("{")) continue;
 
     const methodNames = Object.keys(methods ?? {})
@@ -93,145 +60,135 @@ function parseOpenApiObjects(spec: unknown): DiscoveredObject[] {
       path: `/api/ext/v1/objects/${name}`,
       methods: [],
       operations: [],
+      readOnly: true,
     };
     existing.methods = unique([...existing.methods, ...methodNames]);
     existing.operations = unique([
       ...existing.operations,
       ...methodNames.map((m) => `${m} ${path}`),
     ]);
+    existing.readOnly = !existing.methods.some((m) =>
+      ["POST", "PATCH", "PUT", "DELETE"].includes(m),
+    );
     byObject.set(name, existing);
   }
 
   return [...byObject.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function pickBest(objects: DiscoveredObject[], hints: string[]) {
-  let best: DiscoveredObject | null = null;
-  let bestScore = 0;
-  for (const obj of objects) {
-    const score = scoreName(obj.name, hints);
-    if (score > bestScore) {
-      best = obj;
-      bestScore = score;
+function configuredObjects(): DiscoveredObject[] {
+  return EXPOSED_OBJECT_NAMES.map((name) => ({
+    name,
+    path: `/api/ext/v1/objects/${name}`,
+    methods: ["GET"],
+    operations: [`GET /api/ext/v1/objects/${name}`],
+    readOnly: true,
+  }));
+}
+
+function writeOpsFromObjects(objects: DiscoveredObject[]) {
+  const needed: string[] = [];
+  for (const name of EXPOSED_OBJECT_NAMES) {
+    const obj = objects.find((o) => o.name === name);
+    const ops = obj?.methods ?? ["GET"];
+    if (!ops.includes("POST")) {
+      needed.push(`POST /api/ext/v1/objects/${name} (create)`);
+    }
+    if (!ops.includes("PATCH") && !ops.includes("PUT")) {
+      needed.push(`PATCH /api/ext/v1/objects/${name}/{id} (update)`);
     }
   }
-  return bestScore > 0 ? best?.name ?? null : null;
+  return needed;
 }
 
 export async function discoverCareCircleSchema(
   sdk?: PlatformSDK | null,
 ): Promise<CareCircleSchema> {
   const client = sdk === undefined ? createPlatformSDKFromEnv() : sdk;
-  const warnings: string[] = [];
-
-  const envPatient = process.env.MERIDIAN_PATIENT_OBJECT?.trim() || null;
-  const envTask = process.env.MERIDIAN_TASK_OBJECT?.trim() || null;
+  const base: Omit<CareCircleSchema, "source" | "objects" | "warnings" | "connected" | "writeOpsNeeded"> = {
+    patientObject: MERIDIAN_OBJECTS.patient,
+    caregiverObject: MERIDIAN_OBJECTS.caregiver,
+    carePlanObject: MERIDIAN_OBJECTS.carePlan,
+    appointmentObject: MERIDIAN_OBJECTS.appointment,
+    medicationObject: MERIDIAN_OBJECTS.medication,
+    taskObject: MERIDIAN_OBJECTS.careTask,
+    notificationObject: MERIDIAN_OBJECTS.notification,
+  };
 
   if (!client) {
     return {
-      source: "heuristic",
-      objects: [],
-      patientObject: envPatient,
-      taskObject: envTask,
+      ...base,
+      source: "unavailable",
+      objects: configuredObjects(),
       warnings: [
-        "MERIDIAN_API_KEY is not available in this runtime. Live Meridian reads are disabled until the key is present server-side.",
+        "MERIDIAN_API_KEY is not available in this runtime. Live Meridian reads require the server-side key (present on the published app).",
       ],
       connected: false,
+      writeOpsNeeded: writeOpsFromObjects(configuredObjects()),
     };
   }
 
   try {
     const spec = await client.getOpenApi();
-    const objects = parseOpenApiObjects(spec);
-    const patientObject =
-      envPatient || pickBest(objects, PATIENT_HINTS);
-    const taskObject = envTask || pickBest(objects, TASK_HINTS);
-
-    if (!patientObject) {
-      warnings.push(
-        "OpenAPI was loaded, but no patient-like object name was detected. Set MERIDIAN_PATIENT_OBJECT.",
-      );
-    }
-    if (!taskObject) {
-      warnings.push(
-        "OpenAPI was loaded, but no care-task-like object name was detected. Set MERIDIAN_TASK_OBJECT if tasks are exposed.",
-      );
-    }
-    if (objects.length === 0) {
-      warnings.push(
-        "OpenAPI contained no /api/ext/v1/objects/{Name} paths. Expose objects under Object APIs in Meridian.",
-      );
-    }
-
-    return {
-      source: envPatient || envTask ? "env-override" : "openapi",
-      objects,
-      patientObject,
-      taskObject,
-      warnings,
-      connected: true,
-    };
-  } catch (err) {
-    const detail =
-      err instanceof PlatformSDKError
-        ? `${err.code}: ${err.detail ?? err.message}`
-        : err instanceof Error
-          ? err.message
-          : "Unknown OpenAPI error";
-    warnings.push(`Unable to load Meridian OpenAPI (${detail}).`);
-
-    // Heuristic probe of common names if OpenAPI fails but key works
-    const candidates = unique(
-      [
-        envPatient,
-        envTask,
-        "Patient",
-        "Patients",
-        "CareRecipient",
-        "Care_Recipient",
-        "CareTask",
-        "Care_Task",
-        "Task",
-        "Tasks",
-      ].filter(Boolean) as string[],
-    );
-
-    const found: DiscoveredObject[] = [];
-    for (const name of candidates) {
-      try {
-        await client.listRecords(name, { limit: 1 });
-        found.push({
+    const parsed = parseOpenApiObjects(spec);
+    const known = EXPOSED_OBJECT_NAMES.map((name) => {
+      const found = parsed.find((o) => o.name === name);
+      return (
+        found ?? {
           name,
           path: `/api/ext/v1/objects/${name}`,
-          methods: ["GET", "POST"],
+          methods: ["GET"],
           operations: [`GET /api/ext/v1/objects/${name}`],
-        });
-      } catch (probeErr) {
-        if (
-          probeErr instanceof PlatformSDKError &&
-          (probeErr.status === 404 || probeErr.code === "NOT_FOUND")
-        ) {
-          continue;
+          readOnly: true,
         }
-        // 403/401 means object may exist but key lacks access — still worth noting
-        if (
-          probeErr instanceof PlatformSDKError &&
-          probeErr.status !== 404
-        ) {
-          warnings.push(
-            `Probe ${name}: ${probeErr.status} ${probeErr.code}`,
-          );
-        }
+      );
+    });
+
+    const warnings: string[] = [];
+    for (const name of EXPOSED_OBJECT_NAMES) {
+      if (!parsed.some((o) => o.name === name)) {
+        warnings.push(
+          `OpenAPI did not list object "${name}" explicitly; using configured name.`,
+        );
       }
     }
 
     return {
-      source: "heuristic",
-      objects: found,
-      patientObject: envPatient || pickBest(found, PATIENT_HINTS),
-      taskObject: envTask || pickBest(found, TASK_HINTS),
+      ...base,
+      source: "openapi",
+      objects: known,
       warnings,
       connected: true,
+      writeOpsNeeded: writeOpsFromObjects(known),
+    };
+  } catch (err) {
+    const authError =
+      err instanceof PlatformSDKError
+        ? {
+            status: err.status,
+            code: err.code,
+            detail: err.detail,
+            traceId: err.traceId,
+          }
+        : undefined;
+
+    const warnings = [
+      err instanceof PlatformSDKError
+        ? `OpenAPI auth/load failed: HTTP ${err.status} ${err.code}${err.traceId ? ` (trace ${err.traceId})` : ""}`
+        : err instanceof Error
+          ? `OpenAPI load failed: ${err.message}`
+          : "OpenAPI load failed.",
+    ];
+
+    // Key may still list records even if OpenAPI route differs
+    return {
+      ...base,
+      source: "configured",
+      objects: configuredObjects(),
+      warnings,
+      connected: true,
+      authError,
+      writeOpsNeeded: writeOpsFromObjects(configuredObjects()),
     };
   }
 }

@@ -2,8 +2,11 @@ import Link from "next/link";
 import {
   Activity,
   ArrowRight,
+  Bell,
+  CalendarDays,
   ClipboardCheck,
   HeartPulse,
+  Pill,
   Users,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
@@ -11,23 +14,35 @@ import { MetricCard } from "@/components/care/metric-card";
 import { PatientCard } from "@/components/care/patient-card";
 import { StatusBanner } from "@/components/care/status-banner";
 import { TaskRow } from "@/components/care/task-row";
+import { EmptyState } from "@/components/care/empty-state";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   findMariaGonzalez,
   loadCareSnapshot,
 } from "@/lib/meridian/care-data";
+import { getPageViewer } from "@/lib/viewer";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
+  const viewer = await getPageViewer();
   const snapshot = await loadCareSnapshot();
   const maria = findMariaGonzalez(snapshot.patients);
   const spotlightTasks = snapshot.tasks.slice(0, 3);
   const spotlightPatients = snapshot.patients.slice(0, 3);
 
   return (
-    <AppShell sourceLabel={snapshot.source === "meridian" ? "Meridian" : "Demo"}>
+    <AppShell
+      sourceLabel={snapshot.source === "meridian" ? "Meridian" : "Unavailable"}
+      viewerName={
+        viewer.verified
+          ? viewer.simulated
+            ? `${viewer.name} (simulated)`
+            : viewer.name
+          : undefined
+      }
+    >
       <div className="space-y-8 animate-fadeUp">
         <section className="grid gap-6 lg:grid-cols-[1.4fr_0.8fr]">
           <div className="rounded-[2rem] border border-white/70 bg-gradient-to-br from-white via-strawberry-50 to-matcha-50 p-8 shadow-card">
@@ -38,9 +53,8 @@ export default async function DashboardPage() {
               Calm clarity for every care circle.
             </h1>
             <p className="mt-3 max-w-2xl text-base text-ink-600">
-              Review patient health at a glance, open María González&apos;s profile,
-              and move through related care tasks — powered by your Meridian tenant
-              as the source of truth.
+              Live Meridian records power this overview — patients, tasks,
+              appointments, and alerts in one bilingual command center.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <Button asChild size="lg">
@@ -69,7 +83,7 @@ export default async function DashboardPage() {
               <p>3. María González profile</p>
               <p>4. Related care task</p>
               <p className="pt-2 text-xs text-white/60">
-                Tenant: carecircle-ci-rculo-de-cuidado-5fbd81
+                Tenant: carecircle-ci-rculo-de-cuidado-5fbd81 · read-only
               </p>
             </CardContent>
           </Card>
@@ -79,6 +93,8 @@ export default async function DashboardPage() {
           source={snapshot.source}
           connected={snapshot.connected}
           warnings={snapshot.warnings}
+          authError={snapshot.authError}
+          loadingError={snapshot.loadingError}
           patientObject={snapshot.patientObject}
           taskObject={snapshot.taskObject}
         />
@@ -88,7 +104,7 @@ export default async function DashboardPage() {
             label="Patients"
             labelEs="Pacientes"
             value={snapshot.metrics.patients}
-            hint="From Meridian records"
+            hint="Meridian · patient"
             icon={Users}
             tone="strawberry"
           />
@@ -113,23 +129,51 @@ export default async function DashboardPage() {
             icon={ClipboardCheck}
             tone="matcha"
           />
+          <MetricCard
+            label="Appointments"
+            labelEs="Citas"
+            value={snapshot.metrics.upcomingAppointments}
+            icon={CalendarDays}
+            tone="strawberry"
+          />
+          <MetricCard
+            label="Medications"
+            labelEs="Medicamentos"
+            value={snapshot.metrics.medications}
+            icon={Pill}
+            tone="matcha"
+          />
+          <MetricCard
+            label="Alerts"
+            labelEs="Avisos"
+            value={snapshot.metrics.unreadNotifications}
+            icon={Bell}
+            tone="ink"
+          />
+          <MetricCard
+            label="Needs attention"
+            labelEs="Urgente"
+            value={snapshot.metrics.needsAttention}
+            icon={HeartPulse}
+            tone="strawberry"
+          />
         </section>
 
         <section className="grid gap-6 lg:grid-cols-2">
           <Card>
             <CardHeader className="flex-row items-center justify-between">
-              <CardTitle>
-                Patients · Pacientes
-              </CardTitle>
+              <CardTitle>Patients · Pacientes</CardTitle>
               <Button asChild variant="ghost" size="sm">
                 <Link href="/patients">View all</Link>
               </Button>
             </CardHeader>
             <CardContent className="grid gap-4">
               {spotlightPatients.length === 0 ? (
-                <p className="text-sm text-ink-500">
-                  No patient records returned by Meridian yet.
-                </p>
+                <EmptyState
+                  title="No patient records yet"
+                  titleEs="Sin pacientes"
+                  detail="Waiting for Meridian patient rows from the exposed patient object."
+                />
               ) : (
                 spotlightPatients.map((patient) => (
                   <PatientCard key={patient.id} patient={patient} />
@@ -147,9 +191,11 @@ export default async function DashboardPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               {spotlightTasks.length === 0 ? (
-                <p className="text-sm text-ink-500">
-                  No care-task object exposed or no rows returned.
-                </p>
+                <EmptyState
+                  title="No care tasks yet"
+                  titleEs="Sin tareas"
+                  detail="Waiting for Meridian careTask rows."
+                />
               ) : (
                 spotlightTasks.map((task) => (
                   <TaskRow key={task.id} task={task} />

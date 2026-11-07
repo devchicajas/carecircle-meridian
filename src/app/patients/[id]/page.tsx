@@ -4,6 +4,8 @@ import {
   ArrowLeft,
   CalendarClock,
   HeartPulse,
+  Languages,
+  Mail,
   Phone,
   StickyNote,
   UserRound,
@@ -11,10 +13,12 @@ import {
 import { AppShell } from "@/components/layout/app-shell";
 import { StatusBanner } from "@/components/care/status-banner";
 import { TaskRow } from "@/components/care/task-row";
+import { EmptyState } from "@/components/care/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getPatientById } from "@/lib/meridian/care-data";
+import { getPageViewer } from "@/lib/viewer";
 import { formatDate, initials } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -24,15 +28,32 @@ export default async function PatientProfilePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const viewer = await getPageViewer();
   const { id } = await params;
-  const { snapshot, patient, tasks } = await getPatientById(
-    decodeURIComponent(id),
-  );
+  const {
+    snapshot,
+    patient,
+    tasks,
+    caregivers,
+    carePlans,
+    appointments,
+    medications,
+    notifications,
+  } = await getPatientById(decodeURIComponent(id));
 
   if (!patient) notFound();
 
   return (
-    <AppShell sourceLabel={snapshot.source === "meridian" ? "Meridian" : "Demo"}>
+    <AppShell
+      sourceLabel={snapshot.source === "meridian" ? "Meridian" : "Unavailable"}
+      viewerName={
+        viewer.verified
+          ? viewer.simulated
+            ? `${viewer.name} (simulated)`
+            : viewer.name
+          : undefined
+      }
+    >
       <div className="space-y-6 animate-fadeUp">
         <Button asChild variant="ghost" size="sm" className="-ml-2">
           <Link href="/patients">
@@ -45,6 +66,8 @@ export default async function PatientProfilePage({
           source={snapshot.source}
           connected={snapshot.connected}
           warnings={snapshot.warnings}
+          authError={snapshot.authError}
+          loadingError={snapshot.loadingError}
           patientObject={snapshot.patientObject}
           taskObject={snapshot.taskObject}
         />
@@ -69,8 +92,8 @@ export default async function PatientProfilePage({
 
               <div className="flex flex-wrap gap-2">
                 <Badge variant="matcha">{patient.status}</Badge>
-                {patient.age ? (
-                  <Badge variant="outline">{patient.age} years</Badge>
+                {patient.language ? (
+                  <Badge variant="outline">{patient.language}</Badge>
                 ) : null}
                 {patient.condition ? (
                   <Badge variant="default">{patient.condition}</Badge>
@@ -92,11 +115,25 @@ export default async function PatientProfilePage({
                     value={patient.phone}
                   />
                 ) : null}
-                {patient.city ? (
+                {patient.email ? (
+                  <InfoChip
+                    icon={<Mail className="h-4 w-4" />}
+                    label="Email"
+                    value={patient.email}
+                  />
+                ) : null}
+                {patient.language ? (
+                  <InfoChip
+                    icon={<Languages className="h-4 w-4" />}
+                    label="Language / Idioma"
+                    value={patient.language}
+                  />
+                ) : null}
+                {patient.emergencyContactName ? (
                   <InfoChip
                     icon={<HeartPulse className="h-4 w-4" />}
-                    label="Location / Ubicación"
-                    value={patient.city}
+                    label="Emergency contact"
+                    value={`${patient.emergencyContactName}${patient.emergencyContactPhone ? ` · ${patient.emergencyContactPhone}` : ""}`}
                   />
                 ) : null}
                 {patient.updatedAt ? (
@@ -120,34 +157,90 @@ export default async function PatientProfilePage({
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Linked care records · Registros</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-sm text-ink-600">
-                Showing care tasks linked by patient id/name from the exposed
-                Meridian schema
-                {snapshot.taskObject ? (
-                  <>
-                    {" "}
-                    (<code>{snapshot.taskObject}</code>)
-                  </>
-                ) : (
-                  ". No task object exposed yet."
-                )}
-                .
-              </p>
+          <div className="space-y-4">
+            <LinkedSection title="Care tasks · Tareas">
               {tasks.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-ink-200 p-6 text-sm text-ink-500">
-                  No linked care tasks found for this patient.
-                </div>
+                <EmptyState title="No linked tasks" titleEs="Sin tareas" />
               ) : (
                 tasks.map((task) => <TaskRow key={task.id} task={task} />)
               )}
+            </LinkedSection>
+            <LinkedSection title="Caregivers · Cuidadores">
+              {caregivers.length === 0 ? (
+                <p className="text-sm text-ink-500">No linked caregivers.</p>
+              ) : (
+                caregivers.map((c) => (
+                  <p key={c.id} className="text-sm text-ink-700">
+                    {c.name}
+                    {c.role ? ` · ${c.role}` : ""}
+                    {c.relationship ? ` · ${c.relationship}` : ""}
+                  </p>
+                ))
+              )}
+            </LinkedSection>
+          </div>
+        </section>
+
+        <section className="grid gap-4 lg:grid-cols-3">
+          <LinkedSection title="Care plans · Planes">
+            {carePlans.length === 0 ? (
+              <p className="text-sm text-ink-500">None linked.</p>
+            ) : (
+              carePlans.map((plan) => (
+                <div key={plan.id} className="rounded-2xl bg-white/70 p-3 text-sm">
+                  <div className="font-medium">{plan.status}</div>
+                  <div className="text-ink-500">
+                    {plan.assignedCoordinator || "Unassigned"}
+                  </div>
+                </div>
+              ))
+            )}
+          </LinkedSection>
+          <LinkedSection title="Appointments · Citas">
+            {appointments.length === 0 ? (
+              <p className="text-sm text-ink-500">None linked.</p>
+            ) : (
+              appointments.map((a) => (
+                <div key={a.id} className="rounded-2xl bg-white/70 p-3 text-sm">
+                  <div className="font-medium">{a.type || "Appointment"}</div>
+                  <div className="text-ink-500">
+                    {a.provider || "—"} · {formatDate(a.dateTime)}
+                  </div>
+                </div>
+              ))
+            )}
+          </LinkedSection>
+          <LinkedSection title="Medications · Medicamentos">
+            {medications.length === 0 ? (
+              <p className="text-sm text-ink-500">None linked.</p>
+            ) : (
+              medications.map((m) => (
+                <div key={m.id} className="rounded-2xl bg-white/70 p-3 text-sm">
+                  <div className="font-medium">{m.name}</div>
+                  <div className="text-ink-500">
+                    {[m.dosage, m.frequency].filter(Boolean).join(" · ") || "—"}
+                  </div>
+                </div>
+              ))
+            )}
+          </LinkedSection>
+        </section>
+
+        {notifications.length > 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Related alerts · Avisos</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {notifications.map((n) => (
+                <div key={n.id} className="rounded-2xl border border-ink-50 p-3 text-sm">
+                  <div className="font-medium">{n.message}</div>
+                  <div className="text-xs text-ink-500">{n.status}</div>
+                </div>
+              ))}
             </CardContent>
           </Card>
-        </section>
+        ) : null}
 
         {snapshot.source === "meridian" ? (
           <Card>
@@ -163,6 +256,23 @@ export default async function PatientProfilePage({
         ) : null}
       </div>
     </AppShell>
+  );
+}
+
+function LinkedSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">{children}</CardContent>
+    </Card>
   );
 }
 

@@ -51,8 +51,21 @@ npm run inspect:meridian
 
 `inspect:meridian` loads the protected OpenAPI and prints exposed objects / guessed patient & task objects.
 
+## Exposed Meridian objects (read-only)
+
+`patient`, `caregiver`, `carePlan`, `appointment`, `medication`, `careTask`, `notification`
+
+Intentionally unexposed: `auditEvent`, `platform_issue`, `recordsDirectlyIn`
+
+## Authorization
+
+- `MERIDIAN_API_KEY` is server-side only (Cursor app secret / `.env.local`).
+- Application-user auth uses Cursor identity (`cursor/identity.ts`) on every `/api/*` route — independent of the Meridian integration key.
+- Integration is **read-only** until Meridian enables create/update verbs.
+
 ## Notes
 
 - Field RBAC, row scope, and tenant clamps stay on Meridian’s server.
 - A tenant API key is not the same as end-user authorization.
 - If an object/operation is missing from OpenAPI, the UI reports the missing exposure instead of inventing schema.
+- This agent VM cannot read bound Cursor secrets; live Meridian verification happens on the published app runtime.

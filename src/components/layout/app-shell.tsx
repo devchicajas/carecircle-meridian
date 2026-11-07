@@ -8,37 +8,34 @@ import {
   Users,
   ClipboardList,
   Sparkles,
+  UserRound,
+  CalendarDays,
+  Pill,
+  Bell,
+  ClipboardPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 
 const nav = [
-  {
-    href: "/",
-    label: "Dashboard",
-    es: "Panel",
-    icon: LayoutDashboard,
-  },
-  {
-    href: "/patients",
-    label: "Patients",
-    es: "Pacientes",
-    icon: Users,
-  },
-  {
-    href: "/tasks",
-    label: "Care Tasks",
-    es: "Tareas",
-    icon: ClipboardList,
-  },
+  { href: "/", label: "Dashboard", es: "Panel", icon: LayoutDashboard },
+  { href: "/patients", label: "Patients", es: "Pacientes", icon: Users },
+  { href: "/caregivers", label: "Caregivers", es: "Cuidadores", icon: UserRound },
+  { href: "/care-plans", label: "Care Plans", es: "Planes", icon: ClipboardPlus },
+  { href: "/appointments", label: "Appointments", es: "Citas", icon: CalendarDays },
+  { href: "/medications", label: "Medications", es: "Medicamentos", icon: Pill },
+  { href: "/tasks", label: "Care Tasks", es: "Tareas", icon: ClipboardList },
+  { href: "/notifications", label: "Alerts", es: "Avisos", icon: Bell },
 ];
 
 export function AppShell({
   children,
   sourceLabel,
+  viewerName,
 }: {
   children: React.ReactNode;
   sourceLabel?: string;
+  viewerName?: string;
 }) {
   const pathname = usePathname();
 
@@ -70,12 +67,15 @@ export function AppShell({
             </div>
           </Link>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {viewerName ? (
+              <Badge variant="outline">{viewerName}</Badge>
+            ) : null}
             {sourceLabel ? (
               <Badge variant={sourceLabel === "Meridian" ? "matcha" : "warning"}>
                 {sourceLabel === "Meridian"
-                  ? "Live Meridian"
-                  : "Demo data · add API key"}
+                  ? "Live Meridian · read-only"
+                  : "Meridian unavailable"}
               </Badge>
             ) : null}
           </div>
@@ -93,7 +93,7 @@ export function AppShell({
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm transition",
+                  "inline-flex shrink-0 items-center gap-2 rounded-full px-3 py-2 text-sm transition sm:px-4",
                   active
                     ? "bg-ink-900 text-white shadow-soft"
                     : "text-ink-600 hover:bg-white hover:text-ink-900",
@@ -103,7 +103,7 @@ export function AppShell({
                 <span>{item.label}</span>
                 <span
                   className={cn(
-                    "hidden text-xs sm:inline",
+                    "hidden text-xs lg:inline",
                     active ? "text-white/70" : "text-ink-400",
                   )}
                 >

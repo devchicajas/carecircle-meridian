@@ -1,9 +1,15 @@
-import { NextResponse } from "next/server";
+import { requireAppUser, privateJson } from "@/lib/auth";
 import { discoverCareCircleSchema } from "@/lib/meridian/discovery";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const identity = await requireAppUser(request);
+  if (identity instanceof Response) return identity;
+
   const schema = await discoverCareCircleSchema();
-  return NextResponse.json(schema);
+  return privateJson({
+    ...schema,
+    viewer: { sub: identity.sub, name: identity.name, kind: identity.kind },
+  });
 }
