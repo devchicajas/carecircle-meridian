@@ -64,41 +64,38 @@ export default async function DashboardPage() {
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <Button asChild size="lg">
-                <Link href="/demo/account">
-                  Create dummy account
+                <Link href="/signup">
+                  Sign up · Dummy account
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </Button>
-              <Button asChild variant="outline" size="lg">
-                <Link href="/login">Log in / Entrar</Link>
-              </Button>
-              <Button asChild variant="outline" size="lg">
-                <Link href="/signup">Sign up</Link>
-              </Button>
-              <Button asChild variant="outline" size="lg">
-                <Link href="/patients">Patient directory</Link>
+              <Button asChild variant="soft" size="lg">
+                <Link href="/demo">60s video guide</Link>
               </Button>
               {maria ? (
-                <Button asChild variant="soft" size="lg">
+                <Button asChild variant="outline" size="lg">
                   <Link href={`/patients/${encodeURIComponent(maria.id)}`}>
                     Open María González
                   </Link>
                 </Button>
               ) : null}
+              <Button asChild variant="outline" size="lg">
+                <Link href="/patients">Patient directory</Link>
+              </Button>
             </div>
           </div>
 
           <Card className="bg-ink-900 text-white">
             <CardHeader>
-              <CardTitle className="text-white">Demo path</CardTitle>
+              <CardTitle className="text-white">Hackathon film path</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-white/80">
-              <p>1. Dashboard overview</p>
-              <p>2. Patient directory with search</p>
-              <p>3. María González profile</p>
-              <p>4. Create / update a care task</p>
+              <p>1. Sign up dummy account → Meridian proof write</p>
+              <p>2. Dashboard “Better Care, Together.”</p>
+              <p>3. María González care journey</p>
+              <p>4. Complete a care task · switch to Español</p>
               <p className="pt-2 text-xs text-white/60">
-                Tenant: build-90f628cf19f2414abab1bb2cea64614189
+                Simulation MVP · Live Meridian · fictional data
               </p>
             </CardContent>
           </Card>
