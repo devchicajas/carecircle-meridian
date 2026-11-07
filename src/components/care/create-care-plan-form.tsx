@@ -8,12 +8,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type Option = { value: string; label: string };
 
+const STATUS_OPTIONS = ["Active", "On Hold", "Completed"];
+
 export function CreateCarePlanForm({
   patients,
   coordinators,
+  locale = "en",
 }: {
   patients: Option[];
   coordinators: Option[];
+  locale?: "en" | "es";
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -23,6 +27,7 @@ export function CreateCarePlanForm({
     recoveryGoals: "",
     startDate: "",
     reviewDate: "",
+    dischargeDate: "",
     assignedCoordinator: coordinators[0]?.value || "",
     status: "Active",
   });
@@ -37,15 +42,15 @@ export function CreateCarePlanForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
-          startDate: form.startDate || undefined,
           reviewDate: form.reviewDate || undefined,
-          assignedCoordinator: form.assignedCoordinator || undefined,
+          dischargeDate: form.dischargeDate || undefined,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || `Failed (${res.status})`);
-      setForm({ ...form, recoveryGoals: "" });
-      router.refresh();
+      const id = data.carePlan?.id;
+      if (id) router.push(`/care-plans/${encodeURIComponent(id)}`);
+      else router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Create failed");
     } finally {
@@ -53,15 +58,25 @@ export function CreateCarePlanForm({
     }
   }
 
+  const canSubmit =
+    !!form.patient &&
+    !!form.recoveryGoals.trim() &&
+    !!form.assignedCoordinator &&
+    !!form.startDate &&
+    !!form.status &&
+    coordinators.length > 0;
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Create Care Plan · Crear plan</CardTitle>
+        <CardTitle>
+          {locale === "es" ? "Crear plan de cuidados" : "Create Care Plan"}
+        </CardTitle>
       </CardHeader>
       <CardContent>
         <form onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-2">
           <label className="space-y-1 text-sm">
-            <span>Patient</span>
+            <span>Patient / Paciente *</span>
             <select
               className="h-11 w-full rounded-2xl border border-ink-100 bg-white px-3"
               value={form.patient}
@@ -76,15 +91,21 @@ export function CreateCarePlanForm({
             </select>
           </label>
           <label className="space-y-1 text-sm">
-            <span>Coordinator (Active Care Coordinator)</span>
+            <span>Assigned Coordinator *</span>
             <select
               className="h-11 w-full rounded-2xl border border-ink-100 bg-white px-3"
               value={form.assignedCoordinator}
               onChange={(e) =>
                 setForm({ ...form, assignedCoordinator: e.target.value })
               }
+              required
+              disabled={!coordinators.length}
             >
-              <option value="">None</option>
+              <option value="">
+                {coordinators.length
+                  ? "Select Active Care Coordinator"
+                  : "No eligible coordinator"}
+              </option>
               {coordinators.map((c) => (
                 <option key={c.value} value={c.value}>
                   {c.label}
@@ -93,7 +114,7 @@ export function CreateCarePlanForm({
             </select>
           </label>
           <label className="space-y-1 text-sm sm:col-span-2">
-            <span>Recovery Goals *</span>
+            <span>Recovery Goals / Metas *</span>
             <Input
               required
               value={form.recoveryGoals}
@@ -103,9 +124,25 @@ export function CreateCarePlanForm({
             />
           </label>
           <label className="space-y-1 text-sm">
-            <span>Start Date</span>
+            <span>Status *</span>
+            <select
+              className="h-11 w-full rounded-2xl border border-ink-100 bg-white px-3"
+              value={form.status}
+              onChange={(e) => setForm({ ...form, status: e.target.value })}
+              required
+            >
+              {STATUS_OPTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1 text-sm">
+            <span>Start Date *</span>
             <Input
               type="date"
+              required
               value={form.startDate}
               onChange={(e) => setForm({ ...form, startDate: e.target.value })}
             />
@@ -118,8 +155,18 @@ export function CreateCarePlanForm({
               onChange={(e) => setForm({ ...form, reviewDate: e.target.value })}
             />
           </label>
+          <label className="space-y-1 text-sm">
+            <span>Discharge Date</span>
+            <Input
+              type="date"
+              value={form.dischargeDate}
+              onChange={(e) =>
+                setForm({ ...form, dischargeDate: e.target.value })
+              }
+            />
+          </label>
           <div className="sm:col-span-2 flex items-center gap-3">
-            <Button type="submit" disabled={pending || !patients.length}>
+            <Button type="submit" disabled={pending || !canSubmit}>
               {pending ? "Saving…" : "Create in Meridian"}
             </Button>
             {error ? <p className="text-sm text-red-600">{error}</p> : null}

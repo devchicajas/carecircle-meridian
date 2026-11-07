@@ -22,6 +22,7 @@ export function CreateTaskForm({
   const [patient, setPatient] = useState(patients[0]?.value ?? "");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState("Medium");
+  const [status, setStatus] = useState("Pending");
   const [dueDate, setDueDate] = useState("");
   const [assignedCaregiver, setAssignedCaregiver] = useState(
     caregivers[0]?.value ?? "",
@@ -70,9 +71,9 @@ export function CreateTaskForm({
           description,
           priority,
           dueDate,
-          assignedCaregiver: assignedCaregiver || undefined,
-          carePlan: carePlan || undefined,
-          status: "Pending",
+          assignedCaregiver,
+          carePlan,
+          status,
         }),
       });
       const data = await res.json();
@@ -117,15 +118,31 @@ export function CreateTaskForm({
             </select>
           </label>
           <label className="space-y-1 text-sm">
-            <span className="text-ink-500">Priority / Prioridad</span>
+            <span className="text-ink-500">Priority / Prioridad *</span>
             <select
               className="h-11 w-full rounded-2xl border border-ink-100 bg-white px-3"
               value={priority}
               onChange={(e) => setPriority(e.target.value)}
+              required
             >
               {["Low", "Medium", "High"].map((p) => (
                 <option key={p} value={p}>
                   {p}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="text-ink-500">Status *</span>
+            <select
+              className="h-11 w-full rounded-2xl border border-ink-100 bg-white px-3"
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              required
+            >
+              {["Pending", "In Progress", "Completed", "Overdue"].map((s) => (
+                <option key={s} value={s}>
+                  {s}
                 </option>
               ))}
             </select>
@@ -197,6 +214,8 @@ export function CreateTaskForm({
                 !carePlan ||
                 !assignedCaregiver ||
                 !dueDate ||
+                !priority ||
+                !status ||
                 !description.trim()
               }
             >

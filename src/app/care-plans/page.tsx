@@ -1,14 +1,19 @@
+import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
 import { StatusBanner } from "@/components/care/status-banner";
 import { EmptyState } from "@/components/care/empty-state";
 import { CreateCarePlanForm } from "@/components/care/create-care-plan-form";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { resolvePatientLabel } from "@/lib/meridian/care-data";
+import {
+  resolveCaregiverLabel,
+  resolvePatientLabel,
+} from "@/lib/meridian/care-data";
 import {
   activeCareCoordinators,
   loadAuthorizedCareView,
 } from "@/lib/meridian/authorized-care";
+import { canMutateCareRecords } from "@/lib/care/permissions";
 import { getSessionUser } from "@/lib/auth";
 import { getPageViewer } from "@/lib/viewer";
 import { formatDate } from "@/lib/utils";
@@ -30,6 +35,7 @@ export default async function CarePlansPage() {
     meridianCaregiverBusinessId: profile.meridianCaregiverBusinessId,
   });
 
+  const canCreate = canMutateCareRecords(profile.accountType);
   const coordinators = activeCareCoordinators(view);
   const patientOptions = view.patients.map((p) => ({
     value: p.businessId || p.id,
@@ -56,6 +62,10 @@ export default async function CarePlansPage() {
               ? "My care plans"
               : "Loved ones' care plans"}
           </h1>
+          <p className="mt-2 text-ink-600">
+            Showing {view.carePlans.length} authorized plan
+            {view.carePlans.length === 1 ? "" : "s"}.
+          </p>
         </div>
 
         <StatusBanner
@@ -68,64 +78,94 @@ export default async function CarePlansPage() {
           taskObject={view.taskObject}
         />
 
-        {patientOptions.length === 0 ? (
+        {view.authError || view.loadingError ? (
           <EmptyState
-            title="No authorized patient for a care plan"
-            titleEs="Sin paciente autorizado"
-            detail={
-              view.scope === "family_caregiver"
-                ? "An Active Care Circle membership is required before creating a care plan."
-                : "Link your patient profile first."
-            }
-          />
-        ) : coordinators.length === 0 ? (
-          <EmptyState
-            title="No Active Care Coordinator available"
-            titleEs="Sin coordinador activo"
-            detail="Care plans require an Active Care Coordinator in Meridian. Ask a tenant admin to create or activate a Care Coordinator caregiver, then retry. Ordinary family caregivers cannot be assigned as coordinators."
+            title="Could not load care plans"
+            titleEs="No se pudieron cargar los planes"
+            detail={view.authError?.detail || view.loadingError}
           />
         ) : (
-          <CreateCarePlanForm
-            patients={patientOptions}
-            coordinators={coordinators.map((c) => ({
-              value: c.businessId || c.id,
-              label: `${c.name}${c.businessId ? ` (${c.businessId})` : ""}`,
-            }))}
-          />
-        )}
+          <>
+            {canCreate ? (
+              patientOptions.length === 0 ? (
+                <EmptyState
+                  title="No authorized patient for a care plan"
+                  titleEs="Sin paciente autorizado"
+                  detail="An Active Care Circle membership is required before creating a care plan."
+                />
+              ) : coordinators.length === 0 ? (
+                <EmptyState
+                  title="No Active Care Coordinator available"
+                  titleEs="Sin coordinador activo"
+                  detail="Ask a tenant admin to create or activate a Care Coordinator in Meridian. Family caregivers cannot be assigned as coordinators."
+                />
+              ) : (
+                <CreateCarePlanForm
+                  patients={patientOptions}
+                  coordinators={coordinators.map((c) => ({
+                    value: c.businessId || c.id,
+                    label: `${c.name}${c.businessId ? ` (${c.businessId})` : ""}`,
+                  }))}
+                />
+              )
+            ) : (
+              <p className="rounded-2xl bg-cream p-3 text-sm text-ink-600">
+                Patient accounts can view plans. Creating or editing is available
+                to Family Caregivers for authorized loved ones.
+              </p>
+            )}
 
-        {view.carePlans.length === 0 ? (
-          <EmptyState
-            title="No care plans for your account"
-            titleEs="Sin planes para tu cuenta"
-            detail="Authorized Meridian care plans will appear here."
-          />
-        ) : (
-          <div className="grid gap-4 lg:grid-cols-2">
-            {view.carePlans.map((plan) => (
-              <Card key={plan.id}>
-                <CardHeader className="flex-row items-center justify-between">
-                  <CardTitle className="text-base">
-                    {resolvePatientLabel(
-                      view.rawSnapshot.patients,
-                      plan.patientRef,
-                    ) ||
-                      plan.patientRef ||
-                      plan.businessId}
-                  </CardTitle>
-                  <Badge variant="matcha">{plan.status}</Badge>
-                </CardHeader>
-                <CardContent className="space-y-1 text-sm text-ink-600">
-                  <p>{plan.recoveryGoals || "—"}</p>
-                  <p>
-                    Start {formatDate(plan.startDate)} · Review{" "}
-                    {formatDate(plan.reviewDate)}
-                  </p>
-                  <p>Coordinator: {plan.assignedCoordinator || "—"}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+            {view.carePlans.length === 0 ? (
+              <EmptyState
+                title="No care plans for your account"
+                titleEs="Sin planes para tu cuenta"
+                detail="When Meridian has authorized care plans, they appear here with full field detail."
+              />
+            ) : (
+              <div className="grid gap-4 lg:grid-cols-2">
+                {view.carePlans.map((plan) => (
+                  <Card key={plan.id}>
+                    <CardHeader className="flex-row items-center justify-between">
+                      <CardTitle className="text-base">
+                        <Link
+                          href={`/care-plans/${encodeURIComponent(plan.id)}`}
+                          className="hover:underline"
+                        >
+                          {resolvePatientLabel(
+                            view.rawSnapshot.patients,
+                            plan.patientRef,
+                          ) ||
+                            plan.patientRef ||
+                            plan.businessId}
+                        </Link>
+                      </CardTitle>
+                      <Badge variant="matcha">{plan.status}</Badge>
+                    </CardHeader>
+                    <CardContent className="space-y-1 text-sm text-ink-600">
+                      <p>
+                        <strong>ID:</strong> {plan.businessId || plan.id}
+                      </p>
+                      <p>{plan.recoveryGoals || "—"}</p>
+                      <p>
+                        Coordinator:{" "}
+                        {resolveCaregiverLabel(
+                          view.rawSnapshot.caregivers,
+                          plan.assignedCoordinator,
+                        ) ||
+                          plan.assignedCoordinator ||
+                          "—"}
+                      </p>
+                      <p>
+                        Start {formatDate(plan.startDate)} · Review{" "}
+                        {formatDate(plan.reviewDate)} · Discharge{" "}
+                        {formatDate(plan.dischargeDate)}
+                      </p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     </AppShell>

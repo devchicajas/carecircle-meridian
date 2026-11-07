@@ -16,6 +16,7 @@ import {
 } from "@/lib/meridian/task-consistency";
 import {
   createPlatformSDKFromEnv,
+  PlatformSDK,
   PlatformSDKError,
 } from "@/lib/sdk/platformSDK";
 import { pickString } from "@/lib/utils";
@@ -675,11 +676,53 @@ export async function createCareTask(values: {
     });
   }
 
+  if (!values.patient?.trim()) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "PATIENT_REQUIRED",
+      detail: "Patient is required for Care Tasks.",
+    });
+  }
+  if (!values.carePlan?.trim()) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "CARE_PLAN_REQUIRED",
+      detail: "Care Plan is required for Care Tasks.",
+    });
+  }
+  if (!values.assignedCaregiver?.trim()) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "ASSIGNED_CAREGIVER_REQUIRED",
+      detail: "Assigned Caregiver is required for Care Tasks.",
+    });
+  }
+  if (!values.description?.trim()) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "DESCRIPTION_REQUIRED",
+      detail: "Description is required for Care Tasks.",
+    });
+  }
   if (!values.dueDate?.trim()) {
     throw new PlatformSDKError({
       status: 422,
       code: "DUE_DATE_REQUIRED",
       detail: "Due Date is required for Care Tasks.",
+    });
+  }
+  if (!values.priority?.trim()) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "PRIORITY_REQUIRED",
+      detail: "Priority is required for Care Tasks.",
+    });
+  }
+  if (!values.status?.trim()) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "STATUS_REQUIRED",
+      detail: "Status is required for Care Tasks.",
     });
   }
 
@@ -698,8 +741,8 @@ export async function createCareTask(values: {
   const payload: Record<string, unknown> = {
     patient: canonicalPatientWriteRef(consistency.patient),
     description: values.description,
-    priority: values.priority || "Medium",
-    status: values.status || "Pending",
+    priority: values.priority,
+    status: values.status,
     dueDate: values.dueDate,
   };
   if (assignment.caregiver) {
@@ -752,6 +795,7 @@ export async function updateCareTask(
     priority?: string;
     dueDate?: string;
     assignedCaregiver?: string;
+    escalated?: boolean;
   },
 ) {
   const sdk = createPlatformSDKFromEnv();
@@ -841,6 +885,7 @@ export async function updateCareTask(
   if (patch.description !== undefined) values.description = patch.description;
   if (patch.priority !== undefined) values.priority = patch.priority;
   if (patch.dueDate !== undefined) values.dueDate = patch.dueDate;
+  if (patch.escalated !== undefined) values.escalated = patch.escalated;
   if (patientOrPlanChanging || assigneeChanging) {
     values.patient = writePatient;
     if (writeCarePlan) values.carePlan = writeCarePlan;
@@ -942,6 +987,41 @@ async function readBack(
   return saved;
 }
 
+async function assertEligibleCoordinator(
+  sdk: PlatformSDK,
+  coordinatorRef: string,
+) {
+  const { records } = await sdk.listRecords(MERIDIAN_OBJECTS.caregiver, {
+    limit: 200,
+  });
+  const match = (records as Record<string, unknown>[]).find((row) => {
+    const f = flattenRecord(row);
+    const id = recordEnvelopeId(row);
+    const bid = pickString(f, ["caregiverId"]);
+    return coordinatorRef === id || coordinatorRef === bid;
+  });
+  if (!match) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "COORDINATOR_NOT_FOUND",
+      detail: "Assigned Coordinator was not found in Meridian.",
+    });
+  }
+  const f = flattenRecord(match);
+  const type = pickString(f, ["caregiverType"]) || "";
+  const status = pickString(f, ["status"]) || "";
+  if (!/care coordinator/i.test(type) || !/active/i.test(status)) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "COORDINATOR_INELIGIBLE",
+      detail:
+        "Assigned Coordinator must be an Active Caregiver with type Care Coordinator.",
+    });
+  }
+  const bid = pickString(f, ["caregiverId"]);
+  return bid || recordEnvelopeId(match);
+}
+
 export async function createCarePlanRecord(values: {
   patient: string;
   recoveryGoals: string;
@@ -952,11 +1032,39 @@ export async function createCarePlanRecord(values: {
   assignedCoordinator?: string;
 }) {
   const sdk = requireMeridianSdk();
+  if (!values.patient?.trim()) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "PATIENT_REQUIRED",
+      detail: "Patient is required.",
+    });
+  }
   if (!values.recoveryGoals?.trim()) {
     throw new PlatformSDKError({
       status: 422,
       code: "RECOVERY_GOALS_REQUIRED",
       detail: "Recovery Goals are required.",
+    });
+  }
+  if (!values.assignedCoordinator?.trim()) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "COORDINATOR_REQUIRED",
+      detail: "Assigned Coordinator is required.",
+    });
+  }
+  if (!values.startDate?.trim()) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "START_DATE_REQUIRED",
+      detail: "Start Date is required.",
+    });
+  }
+  if (!values.status?.trim()) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "STATUS_REQUIRED",
+      detail: "Status is required.",
     });
   }
   if (
@@ -971,50 +1079,21 @@ export async function createCarePlanRecord(values: {
     });
   }
 
-  // Coordinator must be Active Care Coordinator when provided.
-  if (values.assignedCoordinator) {
-    const { records } = await sdk.listRecords(MERIDIAN_OBJECTS.caregiver, {
-      limit: 200,
-    });
-    const match = (records as Record<string, unknown>[]).find((row) => {
-      const f = flattenRecord(row);
-      const id = recordEnvelopeId(row);
-      const bid = pickString(f, ["caregiverId"]);
-      return (
-        values.assignedCoordinator === id ||
-        values.assignedCoordinator === bid
-      );
-    });
-    if (!match) {
-      throw new PlatformSDKError({
-        status: 422,
-        code: "COORDINATOR_NOT_FOUND",
-        detail: "Assigned Coordinator was not found in Meridian.",
-      });
-    }
-    const f = flattenRecord(match);
-    const type = pickString(f, ["caregiverType"]) || "";
-    const status = pickString(f, ["status"]) || "";
-    if (!/care coordinator/i.test(type) || !/active/i.test(status)) {
-      throw new PlatformSDKError({
-        status: 422,
-        code: "COORDINATOR_INELIGIBLE",
-        detail:
-          "Assigned Coordinator must be an Active Caregiver with type Care Coordinator.",
-      });
-    }
-  }
+  const coordinatorRef = await assertEligibleCoordinator(
+    sdk,
+    values.assignedCoordinator,
+  );
 
   const created = await sdk.createRecord(
     MERIDIAN_OBJECTS.carePlan,
     {
       patient: values.patient,
       recoveryGoals: values.recoveryGoals,
-      status: values.status || "Active",
+      status: values.status,
       startDate: values.startDate,
       reviewDate: values.reviewDate,
       dischargeDate: values.dischargeDate,
-      assignedCoordinator: values.assignedCoordinator,
+      assignedCoordinator: coordinatorRef,
     },
     "CareCircle: create care plan",
   );
@@ -1027,21 +1106,30 @@ export async function updateCarePlanRecord(
   patch: {
     recoveryGoals?: string;
     status?: string;
+    startDate?: string;
     reviewDate?: string;
+    dischargeDate?: string;
     assignedCoordinator?: string;
+    patient?: string;
   },
 ) {
   const sdk = requireMeridianSdk();
-  const updated = await sdk.updateRecord(
+  const values: Record<string, unknown> = { ...patch };
+  if (patch.assignedCoordinator) {
+    values.assignedCoordinator = await assertEligibleCoordinator(
+      sdk,
+      patch.assignedCoordinator,
+    );
+  }
+  // Never send auto business id
+  delete (values as { carePlanId?: unknown }).carePlanId;
+  await sdk.updateRecord(
     MERIDIAN_OBJECTS.carePlan,
     id,
-    patch,
+    values,
     "CareCircle: update care plan",
   );
-  const envelopeId = recordEnvelopeId(updated as Record<string, unknown>) || id;
-  return normalizeCarePlan(
-    await readBack(MERIDIAN_OBJECTS.carePlan, envelopeId),
-  );
+  return normalizeCarePlan(await readBack(MERIDIAN_OBJECTS.carePlan, id));
 }
 
 export async function createAppointmentRecord(values: {
@@ -1138,11 +1226,25 @@ export async function createMedicationRecord(values: {
   status?: string;
 }) {
   const sdk = requireMeridianSdk();
+  if (!values.patient?.trim()) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "PATIENT_REQUIRED",
+      detail: "Patient is required.",
+    });
+  }
   if (!values.medicationName?.trim()) {
     throw new PlatformSDKError({
       status: 422,
       code: "MEDICATION_NAME_REQUIRED",
       detail: "Medication name is required.",
+    });
+  }
+  if (!values.status?.trim()) {
+    throw new PlatformSDKError({
+      status: 422,
+      code: "STATUS_REQUIRED",
+      detail: "Status is required.",
     });
   }
   const created = await sdk.createRecord(
@@ -1153,7 +1255,7 @@ export async function createMedicationRecord(values: {
       instructions: values.instructions,
       frequency: values.frequency,
       refillDate: values.refillDate,
-      status: values.status || "Active",
+      status: values.status,
     },
     "CareCircle: create medication",
   );
@@ -1161,6 +1263,29 @@ export async function createMedicationRecord(values: {
   return normalizeMedication(
     await readBack(MERIDIAN_OBJECTS.medication, id),
   );
+}
+
+export async function updateMedicationRecord(
+  id: string,
+  patch: {
+    medicationName?: string;
+    instructions?: string;
+    frequency?: string;
+    refillDate?: string;
+    status?: string;
+    patient?: string;
+  },
+) {
+  const sdk = requireMeridianSdk();
+  const values: Record<string, unknown> = { ...patch };
+  delete (values as { medicationId?: unknown }).medicationId;
+  await sdk.updateRecord(
+    MERIDIAN_OBJECTS.medication,
+    id,
+    values,
+    "CareCircle: update medication",
+  );
+  return normalizeMedication(await readBack(MERIDIAN_OBJECTS.medication, id));
 }
 
 export async function createMembershipRecord(values: {

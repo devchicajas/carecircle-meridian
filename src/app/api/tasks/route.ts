@@ -1,5 +1,10 @@
 import { requireAppUser, privateJson } from "@/lib/auth";
-import { createCareTask, loadCareSnapshot } from "@/lib/meridian/care-data";
+import { createCareTask } from "@/lib/meridian/care-data";
+import {
+  assertAuthorizedPatientAccess,
+  loadAuthorizedCareView,
+} from "@/lib/meridian/authorized-care";
+import { canMutateCareRecords } from "@/lib/care/permissions";
 import { TaskConsistencyError } from "@/lib/meridian/task-consistency";
 import { PlatformSDKError } from "@/lib/sdk/platformSDK";
 
@@ -9,14 +14,15 @@ export async function GET(request: Request) {
   const identity = await requireAppUser(request);
   if (identity instanceof Response) return identity;
 
-  const snapshot = await loadCareSnapshot();
+  const view = await loadAuthorizedCareView(identity);
   return privateJson({
-    source: snapshot.source,
-    connected: snapshot.connected,
-    taskObject: snapshot.taskObject,
-    warnings: snapshot.warnings,
-    authError: snapshot.authError,
-    tasks: snapshot.tasks,
+    source: view.source,
+    connected: view.connected,
+    taskObject: view.taskObject,
+    warnings: view.warnings,
+    authError: view.authError,
+    loadingError: view.loadingError,
+    tasks: view.tasks,
     viewer: { id: identity.id, name: identity.name, email: identity.email },
   });
 }
@@ -24,6 +30,12 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const identity = await requireAppUser(request);
   if (identity instanceof Response) return identity;
+  if (!canMutateCareRecords(identity.accountType)) {
+    return privateJson(
+      { error: "Your account cannot create care tasks." },
+      { status: 403 },
+    );
+  }
 
   try {
     const body = (await request.json()) as {
@@ -34,14 +46,28 @@ export async function POST(request: Request) {
       dueDate?: string;
       assignedCaregiver?: string;
       carePlan?: string;
+      escalated?: boolean;
     };
 
-    if (!body.patient || !body.description) {
+    if (
+      !body.patient ||
+      !body.description ||
+      !body.carePlan ||
+      !body.assignedCaregiver ||
+      !body.dueDate ||
+      !body.priority ||
+      !body.status
+    ) {
       return privateJson(
-        { error: "patient and description are required" },
+        {
+          error:
+            "patient, carePlan, assignedCaregiver, description, dueDate, priority, and status are required",
+        },
         { status: 400 },
       );
     }
+
+    await assertAuthorizedPatientAccess(identity, body.patient);
 
     const task = await createCareTask({
       patient: body.patient,

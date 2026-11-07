@@ -52,13 +52,19 @@ export function TaskRow({ task }: { task: TaskView }) {
           ) : (
             <CheckCircle2 className="h-4 w-4 shrink-0 text-matcha-600" />
           )}
-          <p className="truncate font-medium text-ink-900">{task.title}</p>
+          <a
+            href={`/tasks/${encodeURIComponent(task.id)}`}
+            className="truncate font-medium text-ink-900 hover:underline"
+          >
+            {task.title}
+          </a>
         </div>
         <div className="flex flex-wrap items-center gap-2 pl-6 text-xs text-ink-500">
           {task.patientName ? <span>{task.patientName}</span> : null}
           {task.dueAt ? <span>· Due {formatDate(task.dueAt)}</span> : null}
           {task.assignee ? <span>· {task.assignee}</span> : null}
           {task.businessId ? <span>· {task.businessId}</span> : null}
+          {task.escalated ? <span className="text-strawberry-600">· Escalated</span> : null}
         </div>
         {error ? <p className="pl-6 text-xs text-red-600">{error}</p> : null}
       </div>

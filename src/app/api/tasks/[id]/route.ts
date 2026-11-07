@@ -1,5 +1,7 @@
 import { requireAppUser, privateJson } from "@/lib/auth";
-import { updateCareTask } from "@/lib/meridian/care-data";
+import { loadCareSnapshot, updateCareTask } from "@/lib/meridian/care-data";
+import { assertAuthorizedPatientAccess } from "@/lib/meridian/authorized-care";
+import { canCompleteCareTasks, canMutateCareRecords } from "@/lib/care/permissions";
 import { TaskConsistencyError } from "@/lib/meridian/task-consistency";
 import { PlatformSDKError } from "@/lib/sdk/platformSDK";
 
@@ -22,7 +24,37 @@ export async function PATCH(
       priority?: string;
       dueDate?: string;
       assignedCaregiver?: string;
+      escalated?: boolean;
     };
+
+    const snapshot = await loadCareSnapshot();
+    const existing = snapshot.tasks.find(
+      (t) => t.id === decodeURIComponent(id),
+    );
+    if (!existing?.patientRef) {
+      return privateJson({ error: "Care task not found." }, { status: 404 });
+    }
+    await assertAuthorizedPatientAccess(identity, existing.patientRef);
+
+    const statusOnlyComplete =
+      body.status !== undefined &&
+      Object.keys(body).every(
+        (k) => k === "status" || (body as Record<string, unknown>)[k] === undefined,
+      );
+
+    if (statusOnlyComplete) {
+      if (!canCompleteCareTasks(identity.accountType)) {
+        return privateJson(
+          { error: "Your account cannot update task status." },
+          { status: 403 },
+        );
+      }
+    } else if (!canMutateCareRecords(identity.accountType)) {
+      return privateJson(
+        { error: "Your account cannot edit care tasks." },
+        { status: 403 },
+      );
+    }
 
     if (
       body.status === undefined &&
@@ -31,12 +63,17 @@ export async function PATCH(
       body.description === undefined &&
       body.priority === undefined &&
       body.dueDate === undefined &&
-      body.assignedCaregiver === undefined
+      body.assignedCaregiver === undefined &&
+      body.escalated === undefined
     ) {
       return privateJson(
         { error: "At least one updatable field is required" },
         { status: 400 },
       );
+    }
+
+    if (body.patient) {
+      await assertAuthorizedPatientAccess(identity, body.patient);
     }
 
     const task = await updateCareTask(decodeURIComponent(id), body);

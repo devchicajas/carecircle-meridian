@@ -9,6 +9,7 @@ import {
   resolvePatientLabel,
 } from "@/lib/meridian/care-data";
 import { loadAuthorizedCareView } from "@/lib/meridian/authorized-care";
+import { canMutateCareRecords } from "@/lib/care/permissions";
 import { getSessionUser } from "@/lib/auth";
 import { getPageViewer } from "@/lib/viewer";
 import { redirect } from "next/navigation";
@@ -76,6 +77,7 @@ export default async function TasksPage() {
     patientRef: p.patientRef,
   }));
 
+  const canCreate = canMutateCareRecords(profile.accountType);
   const missingPrereqs =
     patientOptions.length === 0 ||
     carePlanOptions.length === 0 ||
@@ -116,41 +118,46 @@ export default async function TasksPage() {
           taskObject={view.taskObject}
         />
 
-        {missingPrereqs ? (
-          <EmptyState
-            title="Task setup incomplete"
-            titleEs="Falta configuración"
-            detail={
-              patientOptions.length === 0
-                ? "No authorized patient yet. Add/activate a Care Circle membership first."
-                : carePlanOptions.length === 0
-                  ? "Create an authorized Care Plan before assigning tasks."
-                  : "No eligible Assigned Caregiver with Active membership for your patients."
-            }
-          />
+        {canCreate ? (
+          missingPrereqs ? (
+            <>
+              <EmptyState
+                title="Task setup incomplete"
+                titleEs="Falta configuración"
+                detail={
+                  patientOptions.length === 0
+                    ? "No authorized patient yet. Add/activate a Care Circle membership first."
+                    : carePlanOptions.length === 0
+                      ? "Create an authorized Care Plan before assigning tasks."
+                      : "No eligible Assigned Caregiver with Active membership for your patients."
+                }
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/care-circle">Care Circle</Link>
+                </Button>
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/care-plans">Care Plans</Link>
+                </Button>
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/patients/add">Add loved one</Link>
+                </Button>
+              </div>
+            </>
+          ) : (
+            <CreateTaskForm
+              patients={patientOptions}
+              caregivers={caregiverOptions}
+              carePlans={carePlanOptions}
+            />
+          )
         ) : (
-          <CreateTaskForm
-            patients={patientOptions}
-            caregivers={caregiverOptions}
-            carePlans={carePlanOptions}
-          />
+          <p className="rounded-2xl bg-cream p-3 text-sm text-ink-600">
+            Patient accounts can view tasks and mark them complete when
+            permitted. Creating or fully editing tasks is available to Family
+            Caregivers.
+          </p>
         )}
-
-        {missingPrereqs ? (
-          <div className="flex flex-wrap gap-2">
-            <Button asChild variant="outline" size="sm">
-              <Link href="/care-circle">Care Circle</Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/care-plans">Care Plans</Link>
-            </Button>
-            {view.scope === "family_caregiver" ? (
-              <Button asChild variant="outline" size="sm">
-                <Link href="/patients/add">Add loved one</Link>
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
 
         <Card>
           <CardHeader>
