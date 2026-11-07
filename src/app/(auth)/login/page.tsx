@@ -78,11 +78,18 @@ export default async function LoginPage() {
         </div>
 
         <div className="flex flex-col gap-2">
+          <Button asChild size="lg">
+            <Link href="/demo/account">
+              {locale === "es"
+                ? "Crear cuenta dummy (probar Meridian)"
+                : "Create dummy account (prove Meridian)"}
+            </Link>
+          </Button>
           <Button asChild variant="outline">
             <Link href="/enter">
               {locale === "es"
-                ? "Entrada demo (simulada)"
-                : "Demo enter (simulated personas)"}
+                ? "Entrada demo (personas)"
+                : "Demo enter (personas)"}
             </Link>
           </Button>
           <Button asChild variant="soft">

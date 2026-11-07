@@ -25,6 +25,7 @@ import { LanguageSwitcher } from "@/components/i18n/language-switcher";
 import type { Locale } from "@/lib/i18n/dictionary";
 
 const nav = [
+  { href: "/demo/account", label: "Demo Account", es: "Cuenta demo", icon: LogIn },
   { href: "/login", label: "Log In", es: "Entrar", icon: LogIn },
   { href: "/", label: "Dashboard", es: "Panel", icon: LayoutDashboard },
   { href: "/patients", label: "Patients", es: "Pacientes", icon: Users },

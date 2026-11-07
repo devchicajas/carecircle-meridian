@@ -64,10 +64,13 @@ export default async function DashboardPage() {
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <Button asChild size="lg">
-                <Link href="/login">
-                  Log in / Entrar
+                <Link href="/demo/account">
+                  Create dummy account
                   <ArrowRight className="h-4 w-4" />
                 </Link>
+              </Button>
+              <Button asChild variant="outline" size="lg">
+                <Link href="/login">Log in / Entrar</Link>
               </Button>
               <Button asChild variant="outline" size="lg">
                 <Link href="/signup">Sign up</Link>

@@ -45,11 +45,20 @@ Mutations: `{ "values": { … }, "reason": "optional" }`. Never fabricate busine
 
 Cross-record checks (Patient↔Care Plan, Caregiver membership) are enforced in the **CareCircle Next.js server**, not claimed as Meridian-global rules.
 
+## Showcase dummy account (prove Meridian)
+
+Meridian **creates** are currently blocked in this tenant by stuck business-ID sequences (`CG-001` / `PAT-001` / `TSK-001`). Updates work.
+
+1. Open **`/demo/account`** (also linked from the dashboard and login)
+2. Enter a fictional name → **Create dummy account**
+3. CareCircle links you to an existing fictional Meridian Caregiver/Patient, **PATCHes** a proof phone number, and **reads it back**
+4. Open `/account` and `/caregivers` to show the live Meridian record
+
 ## Demo path (María González)
 
-1. `/login` → Cursor session (or local simulated viewer)
-2. `/` Caregiver Command Center (“Better Care, Together.”)
-3. `/patients` → open María González
-4. `/care-plans` · `/appointments` · `/tasks` · `/care-journey?patient=PAT-001`
-5. Update a care task; confirm Meridian persistence
+1. `/demo/account` → create showcase dummy account  
+2. `/` Caregiver Command Center (“Better Care, Together.”)  
+3. `/patients` → open María González  
+4. `/care-plans` · `/appointments` · `/tasks` · `/care-journey?patient=PAT-001`  
+5. Update a care task; confirm Meridian persistence  
 6. Toggle EN/ES with the language switcher
