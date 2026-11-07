@@ -25,8 +25,6 @@ export function OnboardingForm({
   const { update } = useSession();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hint, setHint] = useState<string | null>(null);
-  const [stuck, setStuck] = useState(false);
   const [form, setForm] = useState({
     firstName: initial.firstName,
     lastName: initial.lastName,
@@ -35,49 +33,41 @@ export function OnboardingForm({
     phoneNumber: "",
   });
 
-  async function submit(linkByExactEmail: boolean) {
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
     setPending(true);
     setError(null);
-    setHint(null);
     try {
       const res = await fetch("/api/account/onboard", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, linkByExactEmail }),
+        body: JSON.stringify(form),
       });
       const data = await res.json();
       if (!res.ok) {
-        setStuck(data?.code === "MERIDIAN_ID_SEQUENCE_STUCK");
-        setHint(data?.hint || null);
-        throw new Error(data?.error || data?.code || `Failed (${res.status})`);
+        throw new Error(data?.error || `Could not save (${res.status})`);
       }
       await update();
       router.push(data.redirectTo || "/");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Onboarding failed");
+      setError(err instanceof Error ? err.message : "Could not save profile");
     } finally {
       setPending(false);
     }
   }
 
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        void submit(false);
-      }}
-      className="space-y-4"
-    >
+    <form onSubmit={onSubmit} className="space-y-4">
       <p className="rounded-2xl bg-cream p-3 text-sm text-ink-700">
         {locale === "es"
-          ? `Cuenta ${accountType} · ${email}. Crearemos tu perfil en Meridian. No puedes autoasignarte Coordinador/Admin.`
-          : `Account ${accountType} · ${email}. We’ll create your profile in Meridian. You cannot self-assign Coordinator/Admin.`}
+          ? `Completa tu perfil de ${accountType === "patient" ? "paciente" : "cuidador familiar"} (${email}).`
+          : `Finish your ${accountType === "patient" ? "patient" : "family caregiver"} profile (${email}).`}
       </p>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="space-y-1 text-sm">
-          <span>First Name *</span>
+          <span>{locale === "es" ? "Nombre *" : "First name *"}</span>
           <Input
             required
             value={form.firstName}
@@ -85,7 +75,7 @@ export function OnboardingForm({
           />
         </label>
         <label className="space-y-1 text-sm">
-          <span>Last Name *</span>
+          <span>{locale === "es" ? "Apellido *" : "Last name *"}</span>
           <Input
             required
             value={form.lastName}
@@ -95,7 +85,7 @@ export function OnboardingForm({
       </div>
 
       <label className="block space-y-1 text-sm">
-        <span>Preferred Name</span>
+        <span>{locale === "es" ? "Nombre preferido" : "Preferred name"}</span>
         <Input
           value={form.preferredName}
           onChange={(e) => setForm({ ...form, preferredName: e.target.value })}
@@ -103,7 +93,7 @@ export function OnboardingForm({
       </label>
 
       <label className="block space-y-1 text-sm">
-        <span>Phone (optional)</span>
+        <span>{locale === "es" ? "Teléfono (opcional)" : "Phone (optional)"}</span>
         <Input
           placeholder="555-010-1234"
           value={form.phoneNumber}
@@ -112,7 +102,7 @@ export function OnboardingForm({
       </label>
 
       <label className="block space-y-1 text-sm">
-        <span>Preferred Language</span>
+        <span>{locale === "es" ? "Idioma" : "Language"}</span>
         <select
           className="h-11 w-full rounded-2xl border border-ink-100 bg-white px-3"
           value={form.preferredLanguage}
@@ -121,45 +111,25 @@ export function OnboardingForm({
           }
         >
           <option value="English">English</option>
-          <option value="Spanish">Spanish</option>
+          <option value="Spanish">Español</option>
         </select>
       </label>
 
       {error ? (
-        <div className="space-y-2 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          <p className="font-medium">
-            {locale === "es"
-              ? "Meridian no guardó el perfil (error real)"
-              : "Meridian did not save the profile (real error)"}
-          </p>
-          <p>{error}</p>
-          {hint ? <p className="text-xs text-red-600">{hint}</p> : null}
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}
         </div>
       ) : null}
 
       <Button type="submit" className="w-full" size="lg" disabled={pending}>
         {pending
           ? locale === "es"
-            ? "Guardando en Meridian…"
-            : "Saving to Meridian…"
+            ? "Guardando…"
+            : "Saving…"
           : locale === "es"
-            ? "Crear perfil en Meridian"
-            : "Create profile in Meridian"}
+            ? "Guardar y continuar"
+            : "Save and continue"}
       </Button>
-
-      {stuck ? (
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full"
-          disabled={pending}
-          onClick={() => void submit(true)}
-        >
-          {locale === "es"
-            ? "Vincular perfil Meridian por email exacto"
-            : "Link Meridian profile by exact email"}
-        </Button>
-      ) : null}
     </form>
   );
 }

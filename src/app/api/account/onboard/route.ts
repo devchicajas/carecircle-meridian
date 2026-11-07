@@ -23,12 +23,9 @@ type ProfileFields = {
 };
 
 /**
- * Create a Patient or Family Caregiver in Meridian for the signed-in user.
- * Never self-assigns Care Coordinator / Admin.
- *
- * If Meridian ID sequences are stuck (CONFLICT on CG-001/PAT-001), create fails
- * honestly. Optional linkByExactEmail only matches a Meridian row that already
- * has this account's email (demo-controlled; not proof of identity).
+ * Save Patient / Family Caregiver profile to Meridian for the signed-in user.
+ * Tries create first; if Meridian ID sequence conflicts, links the Family
+ * Caregiver/Patient row that already has this account's exact email and PATCHes it.
  */
 export async function POST(request: Request) {
   const user = await requireAppUser(request);
@@ -42,7 +39,7 @@ export async function POST(request: Request) {
   const sdk = createPlatformSDKFromEnv();
   if (!sdk) {
     return privateJson(
-      { error: "MERIDIAN_API_KEY required", code: "MISSING_API_KEY" },
+      { error: "Unable to reach care records right now." },
       { status: 503 },
     );
   }
@@ -65,70 +62,84 @@ export async function POST(request: Request) {
 
   if (!fields.firstName || !fields.lastName) {
     return privateJson(
-      { error: "First Name and Last Name are required." },
+      { error: "First name and last name are required." },
       { status: 400 },
     );
   }
 
   try {
-    if (row.account_type === "patient") {
-      const linked = body.linkByExactEmail
+    const isPatient = row.account_type === "patient";
+    let linked: {
+      id: string;
+      businessId?: string;
+      mode: "created" | "linked_by_exact_email";
+      readBack: boolean;
+    };
+
+    if (body.linkByExactEmail) {
+      linked = isPatient
         ? await linkPatientByExactEmail(sdk, row.email, fields)
-        : await createPatient(sdk, row.email, fields);
-
-      const updated = updateUserProfile(user.id, {
-        firstName: fields.firstName,
-        lastName: fields.lastName,
-        preferredName: fields.preferredName || null,
-        preferredLanguage: fields.preferredLanguage,
-        meridianPatientId: linked.id,
-        meridianPatientBusinessId: linked.businessId,
-        onboarded: true,
-      });
-
-      return privateJson({
-        profile: updated ? toPublicUser(updated) : null,
-        meridian: { object: "patient", ...linked },
-        redirectTo: "/portal/patient",
-      });
+        : await linkCaregiverByExactEmail(sdk, row.email, fields);
+    } else {
+      try {
+        linked = isPatient
+          ? await createPatient(sdk, row.email, fields)
+          : await createCaregiver(sdk, row.email, fields);
+      } catch (err) {
+        // Meridian still colliding on *-001 — fall back to exact-email link.
+        const conflict =
+          err instanceof PlatformSDKError &&
+          (err.status === 409 || /already exists/i.test(err.detail || err.message));
+        if (!conflict) throw err;
+        linked = isPatient
+          ? await linkPatientByExactEmail(sdk, row.email, fields)
+          : await linkCaregiverByExactEmail(sdk, row.email, fields);
+      }
     }
-
-    const linked = body.linkByExactEmail
-      ? await linkCaregiverByExactEmail(sdk, row.email, fields)
-      : await createCaregiver(sdk, row.email, fields);
 
     const updated = updateUserProfile(user.id, {
       firstName: fields.firstName,
       lastName: fields.lastName,
       preferredName: fields.preferredName || null,
       preferredLanguage: fields.preferredLanguage,
-      meridianCaregiverId: linked.id,
-      meridianCaregiverBusinessId: linked.businessId,
+      ...(isPatient
+        ? {
+            meridianPatientId: linked.id,
+            meridianPatientBusinessId: linked.businessId,
+          }
+        : {
+            meridianCaregiverId: linked.id,
+            meridianCaregiverBusinessId: linked.businessId,
+          }),
       onboarded: true,
     });
 
     return privateJson({
       profile: updated ? toPublicUser(updated) : null,
-      meridian: { object: "caregiver", ...linked },
-      redirectTo: "/",
+      meridian: {
+        object: isPatient ? "patient" : "caregiver",
+        ...linked,
+      },
+      redirectTo: isPatient ? "/portal/patient" : "/",
     });
   } catch (err) {
     if (err instanceof PlatformSDKError) {
-      const stuck = /already exists/i.test(err.detail || err.message);
+      const friendly =
+        err.code === "EMAIL_PROFILE_NOT_FOUND"
+          ? err.detail
+          : /already exists/i.test(err.detail || "")
+            ? "Your profile could not be created yet. Make sure a Family Caregiver in Meridian uses this same email, then try again."
+            : err.detail || err.message;
       return privateJson(
         {
-          error: err.detail || err.message,
-          code: stuck ? "MERIDIAN_ID_SEQUENCE_STUCK" : err.code,
-          traceId: err.traceId,
-          hint: stuck
-            ? "Meridian cannot allocate a new business ID (stuck on *-001). In Meridian Data Studio, create a Family Caregiver/Patient with this exact account email, then use “Link Meridian profile by email” — or advance the ID sequence and retry create."
-            : undefined,
+          error: friendly,
+          code: err.code,
         },
-        { status: err.status },
+        { status: err.status >= 400 && err.status < 600 ? err.status : 500 },
       );
     }
     return privateJson(
-      { error: err instanceof Error ? err.message : "Onboarding failed" },
+      { error: err instanceof Error ? err.message : "Could not save profile." },
       { status: 500 },
     );
   }
@@ -147,7 +158,7 @@ async function readBackSaved(
     throw new PlatformSDKError({
       status: 502,
       code: "READBACK_FAILED",
-      detail: `${objectName} write could not be read back from Meridian.`,
+      detail: "Profile save could not be confirmed. Please try again.",
     });
   }
   return saved;
@@ -169,7 +180,7 @@ async function createCaregiver(
       phoneNumber: fields.phoneNumber,
       caregiverType: "Family Caregiver",
       status: "Active",
-      portalAccessStatus: "Active",
+      portalAccessStatus: "Linked",
     },
     `CareCircle onboarding: create family caregiver for ${email}`,
   );
@@ -199,7 +210,7 @@ async function createPatient(
       emailAddress: email,
       phoneNumber: fields.phoneNumber,
       careStatus: "Routine Care",
-      portalAccessStatus: "Active",
+      portalAccessStatus: "Linked",
     },
     `CareCircle onboarding: create patient for ${email}`,
   );
@@ -236,7 +247,8 @@ async function linkCaregiverByExactEmail(
     throw new PlatformSDKError({
       status: 404,
       code: "EMAIL_PROFILE_NOT_FOUND",
-      detail: `No Family Caregiver in Meridian has email ${email}. Create one in Meridian Data Studio with this exact email, then retry link.`,
+      detail:
+        "No matching caregiver profile was found for this email yet. Add this email on your Family Caregiver record in Meridian, then save again.",
     });
   }
   const id = recordEnvelopeId(match);
@@ -246,13 +258,15 @@ async function linkCaregiverByExactEmail(
     {
       firstName: fields.firstName,
       lastName: fields.lastName,
+      preferredName: fields.preferredName,
       preferredLanguage: fields.preferredLanguage,
       phoneNumber: fields.phoneNumber,
-      // Keep Family Caregiver — never elevate.
+      emailAddress: email,
       caregiverType: "Family Caregiver",
       status: "Active",
+      portalAccessStatus: "Linked",
     },
-    `CareCircle onboarding: link+update caregiver for ${email}`,
+    `CareCircle onboarding: update caregiver for ${email}`,
   );
   const saved = await readBackSaved(sdk, MERIDIAN_OBJECTS.caregiver, id);
   const flat = flattenRecord(saved);
@@ -281,7 +295,8 @@ async function linkPatientByExactEmail(
     throw new PlatformSDKError({
       status: 404,
       code: "EMAIL_PROFILE_NOT_FOUND",
-      detail: `No Patient in Meridian has email ${email}. Create one in Meridian Data Studio with this exact email, then retry link.`,
+      detail:
+        "No matching patient profile was found for this email yet. Add this email on your Patient record in Meridian, then save again.",
     });
   }
   const id = recordEnvelopeId(match);
@@ -291,11 +306,14 @@ async function linkPatientByExactEmail(
     {
       firstName: fields.firstName,
       lastName: fields.lastName,
+      preferredName: fields.preferredName,
       preferredLanguage: fields.preferredLanguage,
       phoneNumber: fields.phoneNumber,
+      emailAddress: email,
       careStatus: "Routine Care",
+      portalAccessStatus: "Linked",
     },
-    `CareCircle onboarding: link+update patient for ${email}`,
+    `CareCircle onboarding: update patient for ${email}`,
   );
   const saved = await readBackSaved(sdk, MERIDIAN_OBJECTS.patient, id);
   const flat = flattenRecord(saved);
