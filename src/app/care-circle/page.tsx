@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { StatusBanner } from "@/components/care/status-banner";
 import { EmptyState } from "@/components/care/empty-state";
+import { InviteCaregiverPanel } from "@/components/care/invite-caregiver-panel";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -8,12 +9,15 @@ import {
   resolvePatientLabel,
 } from "@/lib/meridian/care-data";
 import { loadAuthorizedCareView } from "@/lib/meridian/authorized-care";
+import { listConnectionRequestsForCaregiver } from "@/lib/auth/connections";
 import { getSessionUser } from "@/lib/auth";
 import { getPageViewer } from "@/lib/viewer";
 import { getServerLocale } from "@/lib/i18n/locale";
 import { getDictionary } from "@/lib/i18n/dictionary";
-import { formatDate } from "@/lib/utils";
+import { formatDate, isActiveStatus } from "@/lib/utils";
 import { redirect } from "next/navigation";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +36,11 @@ export default async function CareCirclePage() {
     meridianCaregiverId: profile.meridianCaregiverId,
     meridianCaregiverBusinessId: profile.meridianCaregiverBusinessId,
   });
+
+  const caregiverRequests =
+    profile.accountType === "family_caregiver"
+      ? listConnectionRequestsForCaregiver(profile.id)
+      : [];
 
   return (
     <AppShell
@@ -73,6 +82,23 @@ export default async function CareCirclePage() {
           taskObject={view.taskObject}
         />
 
+        {profile.accountType === "patient" ? (
+          <InviteCaregiverPanel locale={locale} />
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            <Button asChild>
+              <Link href="/patients/connect">Connect to existing patient</Link>
+            </Button>
+            {caregiverRequests.some((r) => r.status === "pending_approval") ? (
+              <Badge variant="outline">
+                {locale === "es"
+                  ? "Solicitud en espera de aprobación"
+                  : "Request awaiting approval"}
+              </Badge>
+            ) : null}
+          </div>
+        )}
+
         {view.authError || view.loadingError ? (
           <EmptyState
             title="Could not load Care Circle"
@@ -98,7 +124,7 @@ export default async function CareCirclePage() {
                     {m.businessId || m.id}
                   </CardTitle>
                   <Badge
-                    variant={/active/i.test(m.status) ? "matcha" : "outline"}
+                    variant={isActiveStatus(m.status) ? "matcha" : "outline"}
                   >
                     {m.status}
                   </Badge>
@@ -122,7 +148,7 @@ export default async function CareCirclePage() {
                   <p>
                     {formatDate(m.startDate)} → {formatDate(m.endDate) || "—"}
                   </p>
-                  {!/active/i.test(m.status) ? (
+                  {!isActiveStatus(m.status) ? (
                     <p className="text-amber-800">
                       Waiting for Active status before loved-one access unlocks.
                     </p>

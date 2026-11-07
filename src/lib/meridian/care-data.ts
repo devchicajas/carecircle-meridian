@@ -19,7 +19,7 @@ import {
   PlatformSDK,
   PlatformSDKError,
 } from "@/lib/sdk/platformSDK";
-import { pickString } from "@/lib/utils";
+import { isActiveStatus, pickString } from "@/lib/utils";
 
 export type DataSource = "meridian" | "unavailable";
 
@@ -340,7 +340,7 @@ function computeMetrics(input: {
   ).length;
   return {
     patients: input.patients.length,
-    activeCarePlans: input.carePlans.filter((p) => /active/i.test(p.status))
+    activeCarePlans: input.carePlans.filter((p) => isActiveStatus(p.status))
       .length,
     upcomingAppointments: input.appointments.filter((a) =>
       /scheduled|rescheduled/i.test(a.status),
@@ -1010,7 +1010,7 @@ async function assertEligibleCoordinator(
   const f = flattenRecord(match);
   const type = pickString(f, ["caregiverType"]) || "";
   const status = pickString(f, ["status"]) || "";
-  if (!/care coordinator/i.test(type) || !/active/i.test(status)) {
+  if (!/care coordinator/i.test(type) || !isActiveStatus(status)) {
     throw new PlatformSDKError({
       status: 422,
       code: "COORDINATOR_INELIGIBLE",
@@ -1311,7 +1311,7 @@ export async function createMembershipRecord(values: {
 
   // Meridian accepts only Active | Inactive (no Pending).
   const status = values.membershipStatus || "Inactive";
-  if (/active/i.test(status)) {
+  if (isActiveStatus(status)) {
     const { records } = await sdk.listRecords(
       MERIDIAN_OBJECTS.careCircleMembership,
       { limit: 200 },
@@ -1320,7 +1320,7 @@ export async function createMembershipRecord(values: {
       const f = flattenRecord(row);
       const st = pickString(f, ["membershipStatus", "status"]) || "";
       return (
-        /active/i.test(st) &&
+        isActiveStatus(st) &&
         (pickString(f, ["patient"]) === values.patient ||
           pickString(f, ["patient"])?.toLowerCase() ===
             values.patient.toLowerCase()) &&
@@ -1354,6 +1354,81 @@ export async function createMembershipRecord(values: {
   const id = recordEnvelopeId(created as Record<string, unknown>);
   return normalizeMembership(
     await readBack(MERIDIAN_OBJECTS.careCircleMembership, id),
+  );
+}
+
+/** Find an existing membership for a patient/caregiver pair (any status). */
+export async function findMembershipForPair(input: {
+  patientRef: string;
+  caregiverRef: string;
+}) {
+  const sdk = requireMeridianSdk();
+  const { records } = await sdk.listRecords(
+    MERIDIAN_OBJECTS.careCircleMembership,
+    { limit: 200 },
+  );
+  const match = (records as Record<string, unknown>[]).find((row) => {
+    const f = flattenRecord(row);
+    const patient = pickString(f, ["patient"]) || "";
+    const caregiver = pickString(f, ["caregiver"]) || "";
+    const patientOk =
+      patient === input.patientRef ||
+      patient.toLowerCase() === input.patientRef.toLowerCase();
+    const caregiverOk =
+      caregiver === input.caregiverRef ||
+      caregiver.toLowerCase() === input.caregiverRef.toLowerCase();
+    return patientOk && caregiverOk;
+  });
+  return match ? normalizeMembership(match) : null;
+}
+
+export async function updateMembershipStatus(
+  membershipId: string,
+  membershipStatus: "Active" | "Inactive",
+) {
+  const sdk = requireMeridianSdk();
+  if (membershipStatus === "Active") {
+    const current = await readBack(
+      MERIDIAN_OBJECTS.careCircleMembership,
+      membershipId,
+    );
+    const flat = flattenRecord(current);
+    const patient = pickString(flat, ["patient"]);
+    const caregiver = pickString(flat, ["caregiver"]);
+    if (patient && caregiver) {
+      const { records } = await sdk.listRecords(
+        MERIDIAN_OBJECTS.careCircleMembership,
+        { limit: 200 },
+      );
+      const duplicate = (records as Record<string, unknown>[]).some((row) => {
+        const id = recordEnvelopeId(row);
+        if (id === membershipId) return false;
+        const f = flattenRecord(row);
+        const st = pickString(f, ["membershipStatus", "status"]) || "";
+        return (
+          isActiveStatus(st) &&
+          pickString(f, ["patient"]) === patient &&
+          pickString(f, ["caregiver"]) === caregiver
+        );
+      });
+      if (duplicate) {
+        throw new PlatformSDKError({
+          status: 422,
+          code: "DUPLICATE_ACTIVE_MEMBERSHIP",
+          detail:
+            "Only one Active membership per Patient/Caregiver pair is allowed.",
+        });
+      }
+    }
+  }
+  await sdk.updateRecord(
+    MERIDIAN_OBJECTS.careCircleMembership,
+    membershipId,
+    { membershipStatus },
+    `CareCircle: set membership ${membershipStatus}`,
+  );
+  return normalizeMembership(
+    await readBack(MERIDIAN_OBJECTS.careCircleMembership, membershipId),
   );
 }
 

@@ -12,7 +12,7 @@ import {
   PlatformSDK,
   PlatformSDKError,
 } from "@/lib/sdk/platformSDK";
-import { pickString } from "@/lib/utils";
+import { isActiveStatus, pickString } from "@/lib/utils";
 
 export const CAREGIVER_NOT_AUTHORIZED = {
   code: "CAREGIVER_NOT_AUTHORIZED",
@@ -92,7 +92,7 @@ export async function resolveCaregiverFromMeridian(
 }
 
 function membershipActive(status: string, startDate?: string, endDate?: string) {
-  if (!/active/i.test(status)) return false;
+  if (!isActiveStatus(status)) return false;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   if (startDate) {
@@ -148,7 +148,7 @@ export async function assertCaregiverAuthorizedForPatient(input: {
     });
   }
 
-  if (!/active/i.test(caregiver.status || "")) {
+  if (!isActiveStatus(caregiver.status)) {
     throw new TaskConsistencyError(CAREGIVER_INACTIVE);
   }
 

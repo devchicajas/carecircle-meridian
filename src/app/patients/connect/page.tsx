@@ -1,115 +1,83 @@
-"use client";
-
 import Link from "next/link";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { redirect } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
+import { ConnectPatientForm } from "@/components/care/connect-patient-form";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { getSessionUser } from "@/lib/auth";
+import { getPageViewer } from "@/lib/viewer";
+import { getServerLocale } from "@/lib/i18n/locale";
+import { listConnectionRequestsForCaregiver } from "@/lib/auth/connections";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-export default function ConnectExistingPatientPage() {
-  const router = useRouter();
-  const [code, setCode] = useState("");
-  const [relationshipType, setRelationshipType] = useState("Family Member");
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
+export const dynamic = "force-dynamic";
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setPending(true);
-    setError(null);
-    setNote(null);
-    try {
-      const res = await fetch("/api/invites", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "redeem",
-          code,
-          relationshipType,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Invite could not be redeemed.");
-      setNote(data.note || "Connection requested.");
-      router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Redeem failed");
-    } finally {
-      setPending(false);
-    }
-  }
+export default async function ConnectExistingPatientPage() {
+  const locale = await getServerLocale();
+  const viewer = await getPageViewer();
+  const profile = await getSessionUser();
+  if (!profile) redirect("/login");
+  if (profile.accountType !== "family_caregiver") redirect("/");
+
+  const requests = listConnectionRequestsForCaregiver(profile.id);
 
   return (
-    <AppShell accountType="family_caregiver" accountRole="Family Caregiver" showLogout>
+    <AppShell
+      locale={locale}
+      accountType="family_caregiver"
+      accountRole="Family Caregiver"
+      viewerName={viewer.verified ? viewer.name : undefined}
+      showLogout
+    >
       <div className="mx-auto max-w-xl space-y-6 animate-fadeUp">
         <div>
           <p className="text-sm font-medium uppercase tracking-[0.18em] text-matcha-700">
             Connect existing · Conectar existente
           </p>
           <h1 className="mt-2 text-3xl font-semibold text-ink-900">
-            Redeem a patient invite
+            Connect to an existing patient
           </h1>
-          <p className="mt-2 text-ink-600">
-            Enter the invite code from the patient. Invalid codes return a
-            generic error — CareCircle will not confirm whether a patient
-            record exists.
-          </p>
         </div>
+
+        <ConnectPatientForm locale={locale} />
 
         <Card>
           <CardHeader>
-            <CardTitle>Invite code</CardTitle>
+            <CardTitle>Your connection requests</CardTitle>
           </CardHeader>
-          <CardContent>
-            <form onSubmit={onSubmit} className="space-y-3">
-              <label className="block space-y-1 text-sm">
-                <span>Code</span>
-                <Input
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.toUpperCase())}
-                  placeholder="ABCD1234"
-                  required
-                />
-              </label>
-              <label className="block space-y-1 text-sm">
-                <span>Relationship</span>
-                <select
-                  className="h-11 w-full rounded-2xl border border-ink-100 bg-white px-3"
-                  value={relationshipType}
-                  onChange={(e) => setRelationshipType(e.target.value)}
+          <CardContent className="space-y-2 text-sm">
+            {requests.length === 0 ? (
+              <p className="text-ink-500">No requests yet.</p>
+            ) : (
+              requests.map((req) => (
+                <div
+                  key={req.id}
+                  className="flex items-center justify-between gap-2 rounded-2xl border border-ink-50 p-3"
                 >
-                  {[
-                    "Parent",
-                    "Child",
-                    "Spouse",
-                    "Sibling",
-                    "Family Member",
-                    "Friend",
-                    "Other",
-                  ].map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {error ? (
-                <p className="rounded-2xl bg-red-50 p-3 text-sm text-red-700">
-                  {error}
-                </p>
-              ) : null}
-              {note ? (
-                <p className="rounded-2xl bg-matcha-50 p-3 text-sm text-matcha-900">
-                  {note}
-                </p>
-              ) : null}
-              <Button type="submit" className="w-full" disabled={pending}>
-                {pending ? "Submitting…" : "Request connection"}
-              </Button>
-            </form>
+                  <div>
+                    <p>{req.relationship_type}</p>
+                    <p className="text-xs text-ink-500">
+                      {new Date(req.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                  <Badge
+                    variant={
+                      req.status === "approved"
+                        ? "matcha"
+                        : req.status === "rejected"
+                          ? "outline"
+                          : "default"
+                    }
+                  >
+                    {req.status === "pending_approval"
+                      ? locale === "es"
+                        ? "En espera de aprobación"
+                        : "Awaiting approval"
+                      : req.status}
+                  </Badge>
+                </div>
+              ))
+            )}
           </CardContent>
         </Card>
 

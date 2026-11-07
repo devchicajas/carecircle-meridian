@@ -17,6 +17,7 @@ import {
   lovedOnesForCaregiver,
 } from "@/lib/meridian/care-data";
 import { PlatformSDKError } from "@/lib/sdk/platformSDK";
+import { isActiveStatus } from "@/lib/utils";
 
 export type CareAccount =
   | Pick<
@@ -102,7 +103,7 @@ function computeScopedMetrics(input: {
   }).length;
   return {
     patients: input.patients.length,
-    activeCarePlans: input.carePlans.filter((p) => /active/i.test(p.status))
+    activeCarePlans: input.carePlans.filter((p) => isActiveStatus(p.status))
       .length,
     upcomingAppointments: input.appointments.filter((a) =>
       /scheduled|rescheduled/i.test(a.status),
@@ -253,13 +254,13 @@ export async function loadAuthorizedCareView(
         ...raw.caregivers.filter(
           (c) =>
             /care coordinator/i.test(c.role || "") &&
-            /active/i.test(c.status) &&
+            isActiveStatus(c.status) &&
             c.id !== cg.id,
         ),
       ]
     : raw.caregivers.filter(
         (c) =>
-          /care coordinator/i.test(c.role || "") && /active/i.test(c.status),
+          /care coordinator/i.test(c.role || "") && isActiveStatus(c.status),
       );
 
   const scoped = {
@@ -319,6 +320,6 @@ export function activeCareCoordinators(view: AuthorizedCareView): Caregiver[] {
       : view.caregivers;
   return pool.filter(
     (c) =>
-      /care coordinator/i.test(c.role || "") && /active/i.test(c.status || ""),
+      /care coordinator/i.test(c.role || "") && isActiveStatus(c.status),
   );
 }

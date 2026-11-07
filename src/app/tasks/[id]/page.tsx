@@ -13,7 +13,7 @@ import { loadAuthorizedCareView } from "@/lib/meridian/authorized-care";
 import { canMutateCareRecords } from "@/lib/care/permissions";
 import { getSessionUser } from "@/lib/auth";
 import { getPageViewer } from "@/lib/viewer";
-import { formatDate } from "@/lib/utils";
+import { formatDate, isActiveStatus } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +49,7 @@ export default async function TaskDetailPage({
   }));
   const eligibleCaregiverRefs = new Set(
     view.memberships
-      .filter((m) => /active/i.test(m.status))
+      .filter((m) => isActiveStatus(m.status))
       .map((m) => m.caregiverRef)
       .filter(Boolean) as string[],
   );

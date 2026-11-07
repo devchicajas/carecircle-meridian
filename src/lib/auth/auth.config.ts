@@ -57,25 +57,27 @@ export const authConfig = {
       const userId = (user?.id as string | undefined) || (token.sub as string | undefined);
       if (!userId) return token;
 
-      // Refresh from DB on sign-in and explicit updates so Meridian links appear.
-      if (user || trigger === "update" || !token.onboarded) {
-        const row = findUserById(userId);
-        if (row) {
-          const pub = toPublicUser(row);
-          token.sub = pub.id;
-          token.email = pub.email;
-          token.name = `${pub.firstName} ${pub.lastName}`.trim();
-          token.firstName = pub.firstName;
-          token.lastName = pub.lastName;
-          token.preferredLanguage = pub.preferredLanguage;
-          token.accountType = pub.accountType;
-          token.role = pub.role;
-          token.onboarded = pub.onboarded;
-          token.meridianPatientId = pub.meridianPatientId;
-          token.meridianPatientBusinessId = pub.meridianPatientBusinessId;
-          token.meridianCaregiverId = pub.meridianCaregiverId;
-          token.meridianCaregiverBusinessId = pub.meridianCaregiverBusinessId;
-        }
+      // Always refresh profile + Meridian links from SQLite so invite re-link
+      // and onboarding updates apply without forcing a full re-login.
+      const row = findUserById(userId);
+      if (row) {
+        const pub = toPublicUser(row);
+        token.sub = pub.id;
+        token.email = pub.email;
+        token.name = `${pub.firstName} ${pub.lastName}`.trim();
+        token.firstName = pub.firstName;
+        token.lastName = pub.lastName;
+        token.preferredLanguage = pub.preferredLanguage;
+        token.accountType = pub.accountType;
+        token.role = pub.role;
+        token.onboarded = pub.onboarded;
+        token.meridianPatientId = pub.meridianPatientId;
+        token.meridianPatientBusinessId = pub.meridianPatientBusinessId;
+        token.meridianCaregiverId = pub.meridianCaregiverId;
+        token.meridianCaregiverBusinessId = pub.meridianCaregiverBusinessId;
+      } else if (user) {
+        // Fall back to authorize() payload on first sign-in if row missing.
+        Object.assign(token, user);
       }
       return token;
     },

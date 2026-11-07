@@ -15,6 +15,7 @@ import { getPageViewer } from "@/lib/viewer";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { isActiveStatus } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,7 @@ export default async function TasksPage() {
   // Eligible assignees: caregivers with Active membership to authorized patients
   const eligibleCaregiverRefs = new Set(
     view.memberships
-      .filter((m) => /active/i.test(m.status))
+      .filter((m) => isActiveStatus(m.status))
       .map((m) => m.caregiverRef)
       .filter(Boolean) as string[],
   );

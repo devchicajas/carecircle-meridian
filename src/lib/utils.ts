@@ -16,6 +16,11 @@ export function formatDate(value?: string | null, locale: string = "en-US") {
   }).format(date);
 }
 
+/** True only for exact Active (case-insensitive). Never matches Inactive. */
+export function isActiveStatus(status?: string | null) {
+  return /^active$/i.test(String(status || "").trim());
+}
+
 export function pickString(
   record: Record<string, unknown>,
   keys: string[],

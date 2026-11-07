@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { LogoutButton } from "@/components/auth/logout-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { PatientInvitePanel } from "@/components/account/patient-invite-panel";
+import { InviteCaregiverPanel } from "@/components/care/invite-caregiver-panel";
 import { getSessionUser } from "@/lib/auth";
 import { getServerLocale } from "@/lib/i18n/locale";
 import { getDictionary } from "@/lib/i18n/dictionary";
@@ -90,7 +90,7 @@ export default async function AccountPage() {
         </Card>
 
         {user.accountType === "patient" && user.meridianPatientId ? (
-          <PatientInvitePanel />
+          <InviteCaregiverPanel locale={locale} />
         ) : null}
       </div>
     </AppShell>
