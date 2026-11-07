@@ -18,6 +18,7 @@ export type CareCircleSchema = {
   objects: DiscoveredObject[];
   patientObject: string;
   caregiverObject: string;
+  membershipObject: string;
   carePlanObject: string;
   appointmentObject: string;
   medicationObject: string;
@@ -68,7 +69,7 @@ function parseOpenApiObjects(spec: unknown): DiscoveredObject[] {
       ...methodNames.map((m) => `${m} ${path}`),
     ]);
     existing.readOnly = !existing.methods.some((m) =>
-      ["POST", "PATCH", "PUT", "DELETE"].includes(m),
+      ["POST", "PATCH", "PUT"].includes(m),
     );
     byObject.set(name, existing);
   }
@@ -80,9 +81,14 @@ function configuredObjects(): DiscoveredObject[] {
   return EXPOSED_OBJECT_NAMES.map((name) => ({
     name,
     path: `/api/ext/v1/objects/${name}`,
-    methods: ["GET"],
-    operations: [`GET /api/ext/v1/objects/${name}`],
-    readOnly: true,
+    methods: ["GET", "POST", "PATCH", "PUT"],
+    operations: [
+      `GET /api/ext/v1/objects/${name}`,
+      `POST /api/ext/v1/objects/${name}`,
+      `PATCH /api/ext/v1/objects/${name}/{id}`,
+      `PUT /api/ext/v1/objects/${name}/{id}`,
+    ],
+    readOnly: false,
   }));
 }
 
@@ -90,7 +96,7 @@ function writeOpsFromObjects(objects: DiscoveredObject[]) {
   const needed: string[] = [];
   for (const name of EXPOSED_OBJECT_NAMES) {
     const obj = objects.find((o) => o.name === name);
-    const ops = obj?.methods ?? ["GET"];
+    const ops = obj?.methods ?? [];
     if (!ops.includes("POST")) {
       needed.push(`POST /api/ext/v1/objects/${name} (create)`);
     }
@@ -105,9 +111,10 @@ export async function discoverCareCircleSchema(
   sdk?: PlatformSDK | null,
 ): Promise<CareCircleSchema> {
   const client = sdk === undefined ? createPlatformSDKFromEnv() : sdk;
-  const base: Omit<CareCircleSchema, "source" | "objects" | "warnings" | "connected" | "writeOpsNeeded"> = {
+  const base = {
     patientObject: MERIDIAN_OBJECTS.patient,
     caregiverObject: MERIDIAN_OBJECTS.caregiver,
+    membershipObject: MERIDIAN_OBJECTS.careCircleMembership,
     carePlanObject: MERIDIAN_OBJECTS.carePlan,
     appointmentObject: MERIDIAN_OBJECTS.appointment,
     medicationObject: MERIDIAN_OBJECTS.medication,
@@ -121,7 +128,7 @@ export async function discoverCareCircleSchema(
       source: "unavailable",
       objects: configuredObjects(),
       warnings: [
-        "MERIDIAN_API_KEY is not available in this runtime. Live Meridian reads require the server-side key (present on the published app).",
+        "MERIDIAN_API_KEY is not available in this runtime.",
       ],
       connected: false,
       writeOpsNeeded: writeOpsFromObjects(configuredObjects()),
@@ -144,20 +151,11 @@ export async function discoverCareCircleSchema(
       );
     });
 
-    const warnings: string[] = [];
-    for (const name of EXPOSED_OBJECT_NAMES) {
-      if (!parsed.some((o) => o.name === name)) {
-        warnings.push(
-          `OpenAPI did not list object "${name}" explicitly; using configured name.`,
-        );
-      }
-    }
-
     return {
       ...base,
       source: "openapi",
       objects: known,
-      warnings,
+      warnings: [],
       connected: true,
       writeOpsNeeded: writeOpsFromObjects(known),
     };
@@ -172,20 +170,17 @@ export async function discoverCareCircleSchema(
           }
         : undefined;
 
-    const warnings = [
-      err instanceof PlatformSDKError
-        ? `OpenAPI auth/load failed: HTTP ${err.status} ${err.code}${err.traceId ? ` (trace ${err.traceId})` : ""}`
-        : err instanceof Error
-          ? `OpenAPI load failed: ${err.message}`
-          : "OpenAPI load failed.",
-    ];
-
-    // Key may still list records even if OpenAPI route differs
     return {
       ...base,
       source: "configured",
       objects: configuredObjects(),
-      warnings,
+      warnings: [
+        err instanceof PlatformSDKError
+          ? `OpenAPI load failed: HTTP ${err.status} ${err.code}${err.traceId ? ` (trace ${err.traceId})` : ""}`
+          : err instanceof Error
+            ? `OpenAPI load failed: ${err.message}`
+            : "OpenAPI load failed.",
+      ],
       connected: true,
       authError,
       writeOpsNeeded: writeOpsFromObjects(configuredObjects()),

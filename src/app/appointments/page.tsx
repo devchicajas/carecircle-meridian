@@ -3,7 +3,10 @@ import { StatusBanner } from "@/components/care/status-banner";
 import { EmptyState } from "@/components/care/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { loadCareSnapshot } from "@/lib/meridian/care-data";
+import {
+  loadCareSnapshot,
+  resolvePatientLabel,
+} from "@/lib/meridian/care-data";
 import { getPageViewer } from "@/lib/viewer";
 import { formatDate } from "@/lib/utils";
 
@@ -30,7 +33,7 @@ export default async function AppointmentsPage() {
             Appointments · Citas
           </p>
           <h1 className="mt-2 text-3xl font-semibold text-ink-900">
-            Appointment calendar
+            Appointment agenda
           </h1>
         </div>
 
@@ -57,17 +60,14 @@ export default async function AppointmentsPage() {
                 <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="font-semibold text-ink-900">
-                      {a.type || "Appointment"} · {a.patientName || "Patient"}
+                      {a.type || "Appointment"} ·{" "}
+                      {resolvePatientLabel(snapshot.patients, a.patientRef) ||
+                        a.patientRef}
                     </div>
                     <div className="text-sm text-ink-500">
                       {a.provider || "Provider TBD"} · {formatDate(a.dateTime)}
                       {a.location ? ` · ${a.location}` : ""}
                     </div>
-                    {a.transportationSupport ? (
-                      <div className="mt-1 text-xs text-matcha-700">
-                        Transport: {a.transportationSupport}
-                      </div>
-                    ) : null}
                   </div>
                   <Badge variant="outline">{a.status}</Badge>
                 </CardContent>

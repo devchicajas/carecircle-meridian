@@ -8,7 +8,12 @@ import { Button } from "@/components/ui/button";
 import { CareTask } from "@/lib/meridian/care-data";
 import { formatDate } from "@/lib/utils";
 
-export function TaskRow({ task }: { task: CareTask }) {
+type TaskView = CareTask & {
+  patientName?: string;
+  assignee?: string;
+};
+
+export function TaskRow({ task }: { task: TaskView }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +31,7 @@ export function TaskRow({ task }: { task: CareTask }) {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data?.error || "Update failed");
+        throw new Error(data?.error || data?.code || "Update failed");
       }
       router.refresh();
     } catch (err) {
@@ -51,6 +56,7 @@ export function TaskRow({ task }: { task: CareTask }) {
           {task.patientName ? <span>{task.patientName}</span> : null}
           {task.dueAt ? <span>· Due {formatDate(task.dueAt)}</span> : null}
           {task.assignee ? <span>· {task.assignee}</span> : null}
+          {task.businessId ? <span>· {task.businessId}</span> : null}
         </div>
         {error ? <p className="pl-6 text-xs text-red-600">{error}</p> : null}
       </div>

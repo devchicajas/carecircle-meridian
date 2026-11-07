@@ -62,6 +62,17 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function unwrapMutationRecord<T = Record<string, unknown>>(payload: unknown): T {
+  const obj = asRecord(payload);
+  if (obj?.record && typeof obj.record === "object") {
+    return obj.record as T;
+  }
+  if (obj?.data && typeof obj.data === "object" && !Array.isArray(obj.data)) {
+    return obj.data as T;
+  }
+  return payload as T;
+}
+
 function extractRecords(payload: unknown): {
   records: Record<string, unknown>[];
   total?: number;
@@ -243,39 +254,41 @@ export class PlatformSDK {
     }
   }
 
-  /** POST /api/ext/v1/objects/{object} */
+  /**
+   * POST /api/ext/v1/objects/{object}
+   * Meridian Object API expects `{ values, reason? }` — never invent business IDs.
+   */
   async createRecord<T = Record<string, unknown>>(
     object: string,
-    data: Record<string, unknown>,
+    values: Record<string, unknown>,
+    reason?: string,
   ): Promise<T> {
+    const body: Record<string, unknown> = { values };
+    if (reason) body.reason = reason;
     const raw = await this.request(
       `/api/ext/v1/objects/${encodeURIComponent(object)}`,
-      { method: "POST", body: JSON.stringify(data) },
+      { method: "POST", body: JSON.stringify(body) },
     );
-    const obj = asRecord(raw);
-    return ((obj?.record as T) ?? (obj?.data as T) ?? (raw as T));
+    return unwrapMutationRecord<T>(raw);
   }
 
-  /** PATCH /api/ext/v1/objects/{object}/{id} */
+  /**
+   * PATCH /api/ext/v1/objects/{object}/{id}
+   * Body shape: `{ values, reason? }` per OpenAPI.
+   */
   async updateRecord<T = Record<string, unknown>>(
     object: string,
     id: string,
-    data: Record<string, unknown>,
+    values: Record<string, unknown>,
+    reason?: string,
   ): Promise<T> {
+    const body: Record<string, unknown> = { values };
+    if (reason) body.reason = reason;
     const raw = await this.request(
       `/api/ext/v1/objects/${encodeURIComponent(object)}/${encodeURIComponent(id)}`,
-      { method: "PATCH", body: JSON.stringify(data) },
+      { method: "PATCH", body: JSON.stringify(body) },
     );
-    const obj = asRecord(raw);
-    return ((obj?.record as T) ?? (obj?.data as T) ?? (raw as T));
-  }
-
-  /** DELETE /api/ext/v1/objects/{object}/{id} */
-  async deleteRecord(object: string, id: string): Promise<void> {
-    await this.request(
-      `/api/ext/v1/objects/${encodeURIComponent(object)}/${encodeURIComponent(id)}`,
-      { method: "DELETE" },
-    );
+    return unwrapMutationRecord<T>(raw);
   }
 
   /** GET /api/ext/v1/reports */
@@ -322,6 +335,6 @@ export function createPlatformSDKFromEnv() {
     baseUrl: process.env.MERIDIAN_BASE_URL || "https://dev.lightleap.ai/meridian",
     tenant:
       process.env.MERIDIAN_TENANT ||
-      "carecircle-ci-rculo-de-cuidado-5fbd81",
+      "build-90f628cf19f2414abab1bb2cea64614189",
   });
 }

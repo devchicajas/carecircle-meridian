@@ -7,8 +7,6 @@ import {
   Languages,
   Mail,
   Phone,
-  StickyNote,
-  UserRound,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { StatusBanner } from "@/components/care/status-banner";
@@ -17,7 +15,10 @@ import { EmptyState } from "@/components/care/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getPatientById } from "@/lib/meridian/care-data";
+import {
+  getPatientById,
+  resolveCaregiverLabel,
+} from "@/lib/meridian/care-data";
 import { getPageViewer } from "@/lib/viewer";
 import { formatDate, initials } from "@/lib/utils";
 
@@ -35,6 +36,7 @@ export default async function PatientProfilePage({
     patient,
     tasks,
     caregivers,
+    memberships,
     carePlans,
     appointments,
     medications,
@@ -42,6 +44,26 @@ export default async function PatientProfilePage({
   } = await getPatientById(decodeURIComponent(id));
 
   if (!patient) notFound();
+
+  const journey = [
+    ...appointments.map((a) => ({
+      at: a.dateTime,
+      label: `Appointment · ${a.type || "Visit"}`,
+      detail: a.provider || a.location || a.status,
+    })),
+    ...tasks.map((t) => ({
+      at: t.dueAt || t.completedOn,
+      label: `Task · ${t.title}`,
+      detail: t.status,
+    })),
+    ...carePlans.map((p) => ({
+      at: p.startDate,
+      label: `Care plan · ${p.status}`,
+      detail: p.recoveryGoals?.slice(0, 120),
+    })),
+  ]
+    .filter((e) => e.at)
+    .sort((a, b) => String(a.at).localeCompare(String(b.at)));
 
   return (
     <AppShell
@@ -85,7 +107,7 @@ export default async function PatientProfilePage({
                     {patient.name}
                   </h1>
                   <p className="text-sm text-ink-500">
-                    Patient profile · Perfil del paciente
+                    {patient.businessId} · Patient profile · Perfil
                   </p>
                 </div>
               </div>
@@ -95,19 +117,9 @@ export default async function PatientProfilePage({
                 {patient.language ? (
                   <Badge variant="outline">{patient.language}</Badge>
                 ) : null}
-                {patient.condition ? (
-                  <Badge variant="default">{patient.condition}</Badge>
-                ) : null}
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                {patient.caregiver ? (
-                  <InfoChip
-                    icon={<UserRound className="h-4 w-4" />}
-                    label="Caregiver / Cuidador"
-                    value={patient.caregiver}
-                  />
-                ) : null}
                 {patient.phone ? (
                   <InfoChip
                     icon={<Phone className="h-4 w-4" />}
@@ -129,52 +141,61 @@ export default async function PatientProfilePage({
                     value={patient.language}
                   />
                 ) : null}
-                {patient.emergencyContactName ? (
-                  <InfoChip
-                    icon={<HeartPulse className="h-4 w-4" />}
-                    label="Emergency contact"
-                    value={`${patient.emergencyContactName}${patient.emergencyContactPhone ? ` · ${patient.emergencyContactPhone}` : ""}`}
-                  />
-                ) : null}
-                {patient.updatedAt ? (
+                {patient.careStartDate ? (
                   <InfoChip
                     icon={<CalendarClock className="h-4 w-4" />}
-                    label="Updated / Actualizado"
-                    value={formatDate(patient.updatedAt)}
+                    label="Care start / Inicio"
+                    value={formatDate(patient.careStartDate)}
+                  />
+                ) : null}
+                {patient.dateOfBirth ? (
+                  <InfoChip
+                    icon={<HeartPulse className="h-4 w-4" />}
+                    label="Date of birth"
+                    value={formatDate(patient.dateOfBirth)}
                   />
                 ) : null}
               </div>
-
-              {patient.notes ? (
-                <div className="rounded-2xl bg-matcha-50 p-4 text-sm text-matcha-900">
-                  <div className="mb-1 flex items-center gap-2 font-medium">
-                    <StickyNote className="h-4 w-4" />
-                    Care notes · Notas
-                  </div>
-                  {patient.notes}
-                </div>
-              ) : null}
             </CardContent>
           </Card>
 
           <div className="space-y-4">
+            <LinkedSection title="Care Circle · Círculo">
+              {memberships.length === 0 ? (
+                <p className="text-sm text-ink-500">No memberships linked.</p>
+              ) : (
+                memberships.map((m) => (
+                  <div key={m.id} className="rounded-2xl bg-white/70 p-3 text-sm">
+                    <div className="font-medium">
+                      {resolveCaregiverLabel(
+                        caregivers.length ? caregivers : snapshot.caregivers,
+                        m.caregiverRef,
+                      ) || m.caregiverRef}
+                    </div>
+                    <div className="text-ink-500">
+                      {m.relationshipType || "Member"} · {m.status}
+                    </div>
+                  </div>
+                ))
+              )}
+            </LinkedSection>
+
             <LinkedSection title="Care tasks · Tareas">
               {tasks.length === 0 ? (
                 <EmptyState title="No linked tasks" titleEs="Sin tareas" />
               ) : (
-                tasks.map((task) => <TaskRow key={task.id} task={task} />)
-              )}
-            </LinkedSection>
-            <LinkedSection title="Caregivers · Cuidadores">
-              {caregivers.length === 0 ? (
-                <p className="text-sm text-ink-500">No linked caregivers.</p>
-              ) : (
-                caregivers.map((c) => (
-                  <p key={c.id} className="text-sm text-ink-700">
-                    {c.name}
-                    {c.role ? ` · ${c.role}` : ""}
-                    {c.relationship ? ` · ${c.relationship}` : ""}
-                  </p>
+                tasks.map((task) => (
+                  <TaskRow
+                    key={task.id}
+                    task={{
+                      ...task,
+                      patientName: patient.name,
+                      assignee: resolveCaregiverLabel(
+                        snapshot.caregivers,
+                        task.assigneeRef,
+                      ),
+                    }}
+                  />
                 ))
               )}
             </LinkedSection>
@@ -192,6 +213,11 @@ export default async function PatientProfilePage({
                   <div className="text-ink-500">
                     {plan.assignedCoordinator || "Unassigned"}
                   </div>
+                  {plan.recoveryGoals ? (
+                    <p className="mt-2 text-xs text-ink-600">
+                      {plan.recoveryGoals}
+                    </p>
+                  ) : null}
                 </div>
               ))
             )}
@@ -218,13 +244,44 @@ export default async function PatientProfilePage({
                 <div key={m.id} className="rounded-2xl bg-white/70 p-3 text-sm">
                   <div className="font-medium">{m.name}</div>
                   <div className="text-ink-500">
-                    {[m.dosage, m.frequency].filter(Boolean).join(" · ") || "—"}
+                    {[m.frequency, m.instructions].filter(Boolean).join(" · ") ||
+                      "—"}
                   </div>
                 </div>
               ))
             )}
           </LinkedSection>
         </section>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Care Journey · Trayectoria</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {journey.length === 0 ? (
+              <p className="text-sm text-ink-500">
+                No dated care events available yet.
+              </p>
+            ) : (
+              journey.map((event, idx) => (
+                <div
+                  key={`${event.label}-${idx}`}
+                  className="flex gap-4 rounded-2xl border border-ink-50 bg-white/70 p-4"
+                >
+                  <div className="w-28 shrink-0 text-xs font-medium text-matcha-700">
+                    {formatDate(event.at)}
+                  </div>
+                  <div>
+                    <div className="font-medium text-ink-900">{event.label}</div>
+                    {event.detail ? (
+                      <div className="text-sm text-ink-500">{event.detail}</div>
+                    ) : null}
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
 
         {notifications.length > 0 ? (
           <Card>
@@ -233,24 +290,14 @@ export default async function PatientProfilePage({
             </CardHeader>
             <CardContent className="space-y-2">
               {notifications.map((n) => (
-                <div key={n.id} className="rounded-2xl border border-ink-50 p-3 text-sm">
+                <div
+                  key={n.id}
+                  className="rounded-2xl border border-ink-50 p-3 text-sm"
+                >
                   <div className="font-medium">{n.message}</div>
                   <div className="text-xs text-ink-500">{n.status}</div>
                 </div>
               ))}
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {snapshot.source === "meridian" ? (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Raw Meridian fields</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <pre className="overflow-x-auto rounded-2xl bg-ink-950 p-4 text-xs text-matcha-100">
-                {JSON.stringify(patient.raw, null, 2)}
-              </pre>
             </CardContent>
           </Card>
         ) : null}

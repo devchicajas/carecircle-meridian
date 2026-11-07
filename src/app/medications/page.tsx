@@ -3,7 +3,10 @@ import { StatusBanner } from "@/components/care/status-banner";
 import { EmptyState } from "@/components/care/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { loadCareSnapshot } from "@/lib/meridian/care-data";
+import {
+  loadCareSnapshot,
+  resolvePatientLabel,
+} from "@/lib/meridian/care-data";
 import { getPageViewer } from "@/lib/viewer";
 import { formatDate } from "@/lib/utils";
 
@@ -30,8 +33,11 @@ export default async function MedicationsPage() {
             Medications · Medicamentos
           </p>
           <h1 className="mt-2 text-3xl font-semibold text-ink-900">
-            Medication list
+            Recorded medication list
           </h1>
+          <p className="mt-2 max-w-2xl text-sm text-ink-500">
+            Display-only recorded information. Not clinical guidance.
+          </p>
         </div>
 
         <StatusBanner
@@ -59,21 +65,18 @@ export default async function MedicationsPage() {
                     <div>
                       <div className="font-semibold text-ink-900">{m.name}</div>
                       <div className="text-sm text-ink-500">
-                        {m.patientName || "Patient"}
+                        {resolvePatientLabel(snapshot.patients, m.patientRef) ||
+                          m.patientRef}
                       </div>
                     </div>
-                    {m.refillReminderEnabled ? (
-                      <Badge variant="matcha">Refill reminder</Badge>
-                    ) : null}
+                    <Badge variant="matcha">{m.status}</Badge>
                   </div>
                   <div className="text-sm text-ink-600">
-                    {[m.dosage, m.frequency].filter(Boolean).join(" · ") || "—"}
+                    {[m.frequency, m.instructions].filter(Boolean).join(" · ") ||
+                      "—"}
                   </div>
                   <div className="text-xs text-ink-500">
-                    {m.prescribingDoctor || "Doctor TBD"}
-                    {m.lastRenewalDate
-                      ? ` · renewed ${formatDate(m.lastRenewalDate)}`
-                      : ""}
+                    Refill: {formatDate(m.refillDate)}
                   </div>
                 </CardContent>
               </Card>

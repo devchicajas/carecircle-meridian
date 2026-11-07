@@ -1,17 +1,16 @@
 import Link from "next/link";
-import { ArrowUpRight, MapPin, UserRound } from "lucide-react";
+import { ArrowUpRight, Languages, Mail } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Patient } from "@/lib/meridian/care-data";
 import { initials } from "@/lib/utils";
 
 export function PatientCard({ patient }: { patient: Patient }) {
-  const statusVariant =
-    /monitor/i.test(patient.status)
+  const statusVariant = /recovery|active/i.test(patient.status)
+    ? "matcha"
+    : /chronic|routine/i.test(patient.status)
       ? "warning"
-      : /active/i.test(patient.status)
-        ? "matcha"
-        : "outline";
+      : "outline";
 
   return (
     <Link href={`/patients/${encodeURIComponent(patient.id)}`} className="block">
@@ -27,7 +26,7 @@ export function PatientCard({ patient }: { patient: Patient }) {
                   {patient.name}
                 </div>
                 <div className="text-xs text-ink-500">
-                  {patient.condition || "Care profile"}
+                  {patient.businessId || "Care profile"}
                 </div>
               </div>
             </div>
@@ -42,16 +41,16 @@ export function PatientCard({ patient }: { patient: Patient }) {
           </div>
 
           <div className="mt-auto space-y-2 text-sm text-ink-600">
-            {patient.caregiver ? (
+            {patient.language ? (
               <div className="flex items-center gap-2">
-                <UserRound className="h-4 w-4 text-matcha-600" />
-                <span>{patient.caregiver}</span>
+                <Languages className="h-4 w-4 text-matcha-600" />
+                <span>{patient.language}</span>
               </div>
             ) : null}
-            {patient.city ? (
+            {patient.email ? (
               <div className="flex items-center gap-2">
-                <MapPin className="h-4 w-4 text-strawberry-500" />
-                <span>{patient.city}</span>
+                <Mail className="h-4 w-4 text-strawberry-500" />
+                <span>{patient.email}</span>
               </div>
             ) : null}
           </div>

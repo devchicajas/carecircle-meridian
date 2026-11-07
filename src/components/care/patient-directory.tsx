@@ -22,9 +22,10 @@ export function PatientDirectory({ patients }: { patients: Patient[] }) {
     const matchesQuery =
       !q ||
       patient.name.toLowerCase().includes(q) ||
-      patient.condition?.toLowerCase().includes(q) ||
-      patient.caregiver?.toLowerCase().includes(q) ||
-      patient.city?.toLowerCase().includes(q);
+      patient.businessId?.toLowerCase().includes(q) ||
+      patient.language?.toLowerCase().includes(q) ||
+      patient.email?.toLowerCase().includes(q) ||
+      patient.status.toLowerCase().includes(q);
     const matchesStatus =
       status === "all" ||
       patient.status.toLowerCase() === status.toLowerCase();

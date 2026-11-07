@@ -1,7 +1,8 @@
-/** Exact Meridian object API names exposed for this tenant (read-only). */
+/** Exact Meridian object API keys for this CareCircle tenant. */
 export const MERIDIAN_OBJECTS = {
   patient: "patient",
   caregiver: "caregiver",
+  careCircleMembership: "careCircleMembership",
   carePlan: "carePlan",
   appointment: "appointment",
   medication: "medication",
@@ -13,9 +14,5 @@ export type MeridianObjectKey = keyof typeof MERIDIAN_OBJECTS;
 
 export const EXPOSED_OBJECT_NAMES = Object.values(MERIDIAN_OBJECTS);
 
-/** Intentionally unexposed — do not call. */
-export const UNEXPOSED_OBJECTS = [
-  "auditEvent",
-  "platform_issue",
-  "recordsDirectlyIn",
-] as const;
+/** Do not call these from CareCircle product flows. */
+export const OUT_OF_SCOPE_OBJECTS = ["platform_issue", "auditEvent"] as const;

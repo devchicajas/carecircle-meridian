@@ -5,8 +5,8 @@ import {
   Bell,
   CalendarDays,
   ClipboardCheck,
+  ClipboardList,
   HeartPulse,
-  Pill,
   Users,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
@@ -20,6 +20,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   findMariaGonzalez,
   loadCareSnapshot,
+  resolveCaregiverLabel,
+  resolvePatientLabel,
 } from "@/lib/meridian/care-data";
 import { getPageViewer } from "@/lib/viewer";
 
@@ -29,7 +31,11 @@ export default async function DashboardPage() {
   const viewer = await getPageViewer();
   const snapshot = await loadCareSnapshot();
   const maria = findMariaGonzalez(snapshot.patients);
-  const spotlightTasks = snapshot.tasks.slice(0, 3);
+  const spotlightTasks = snapshot.tasks.slice(0, 3).map((task) => ({
+    ...task,
+    patientName: resolvePatientLabel(snapshot.patients, task.patientRef),
+    assignee: resolveCaregiverLabel(snapshot.caregivers, task.assigneeRef),
+  }));
   const spotlightPatients = snapshot.patients.slice(0, 3);
 
   return (
@@ -53,8 +59,8 @@ export default async function DashboardPage() {
               Calm clarity for every care circle.
             </h1>
             <p className="mt-3 max-w-2xl text-base text-ink-600">
-              Live Meridian records power this overview — patients, tasks,
-              appointments, and alerts in one bilingual command center.
+              Live Meridian records power this overview — patients, plans,
+              appointments, and tasks from your CareCircle tenant.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <Button asChild size="lg">
@@ -81,9 +87,9 @@ export default async function DashboardPage() {
               <p>1. Dashboard overview</p>
               <p>2. Patient directory with search</p>
               <p>3. María González profile</p>
-              <p>4. Related care task</p>
+              <p>4. Create / update a care task</p>
               <p className="pt-2 text-xs text-white/60">
-                Tenant: carecircle-ci-rculo-de-cuidado-5fbd81 · read-only
+                Tenant: build-90f628cf19f2414abab1bb2cea64614189
               </p>
             </CardContent>
           </Card>
@@ -99,9 +105,9 @@ export default async function DashboardPage() {
           taskObject={snapshot.taskObject}
         />
 
-        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <MetricCard
-            label="Patients"
+            label="Patients I'm Supporting"
             labelEs="Pacientes"
             value={snapshot.metrics.patients}
             hint="Meridian · patient"
@@ -109,52 +115,52 @@ export default async function DashboardPage() {
             tone="strawberry"
           />
           <MetricCard
-            label="Active care"
-            labelEs="Cuidado activo"
-            value={snapshot.metrics.activePatients}
+            label="Active Care Plans"
+            labelEs="Planes activos"
+            value={snapshot.metrics.activeCarePlans}
             icon={HeartPulse}
             tone="matcha"
           />
           <MetricCard
-            label="Open tasks"
-            labelEs="Tareas abiertas"
-            value={snapshot.metrics.openTasks}
+            label="Upcoming Appointments"
+            labelEs="Próximas citas"
+            value={snapshot.metrics.upcomingAppointments}
+            icon={CalendarDays}
+            tone="ink"
+          />
+          <MetricCard
+            label="Pending Tasks"
+            labelEs="Tareas pendientes"
+            value={snapshot.metrics.pendingTasks}
+            icon={ClipboardList}
+            tone="strawberry"
+          />
+          <MetricCard
+            label="Overdue Tasks"
+            labelEs="Vencidas"
+            value={snapshot.metrics.overdueTasks}
             icon={Activity}
             tone="ink"
+          />
+          <MetricCard
+            label="Unread Notifications"
+            labelEs="Avisos"
+            value={snapshot.metrics.unreadNotifications}
+            icon={Bell}
+            tone="matcha"
+          />
+          <MetricCard
+            label="Open tasks"
+            labelEs="Abiertas"
+            value={snapshot.metrics.openTasks}
+            icon={ClipboardCheck}
+            tone="matcha"
           />
           <MetricCard
             label="Completed"
             labelEs="Completadas"
             value={snapshot.metrics.completedTasks}
             icon={ClipboardCheck}
-            tone="matcha"
-          />
-          <MetricCard
-            label="Appointments"
-            labelEs="Citas"
-            value={snapshot.metrics.upcomingAppointments}
-            icon={CalendarDays}
-            tone="strawberry"
-          />
-          <MetricCard
-            label="Medications"
-            labelEs="Medicamentos"
-            value={snapshot.metrics.medications}
-            icon={Pill}
-            tone="matcha"
-          />
-          <MetricCard
-            label="Alerts"
-            labelEs="Avisos"
-            value={snapshot.metrics.unreadNotifications}
-            icon={Bell}
-            tone="ink"
-          />
-          <MetricCard
-            label="Needs attention"
-            labelEs="Urgente"
-            value={snapshot.metrics.needsAttention}
-            icon={HeartPulse}
             tone="strawberry"
           />
         </section>
@@ -172,7 +178,7 @@ export default async function DashboardPage() {
                 <EmptyState
                   title="No patient records yet"
                   titleEs="Sin pacientes"
-                  detail="Waiting for Meridian patient rows from the exposed patient object."
+                  detail="Waiting for Meridian patient rows."
                 />
               ) : (
                 spotlightPatients.map((patient) => (

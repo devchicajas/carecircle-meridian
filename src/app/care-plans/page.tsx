@@ -3,7 +3,10 @@ import { StatusBanner } from "@/components/care/status-banner";
 import { EmptyState } from "@/components/care/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { loadCareSnapshot } from "@/lib/meridian/care-data";
+import {
+  loadCareSnapshot,
+  resolvePatientLabel,
+} from "@/lib/meridian/care-data";
 import { getPageViewer } from "@/lib/viewer";
 import { formatDate } from "@/lib/utils";
 
@@ -56,17 +59,19 @@ export default async function CarePlansPage() {
               <Card key={plan.id}>
                 <CardHeader className="flex-row items-center justify-between">
                   <CardTitle className="text-base">
-                    {plan.patientName || "Patient plan"}
+                    {resolvePatientLabel(snapshot.patients, plan.patientRef) ||
+                      plan.patientRef ||
+                      plan.businessId}
                   </CardTitle>
                   <Badge variant="matcha">{plan.status}</Badge>
                 </CardHeader>
                 <CardContent className="space-y-2 text-sm text-ink-600">
                   <p>Coordinator: {plan.assignedCoordinator || "—"}</p>
-                  <p>Diagnosis date: {formatDate(plan.diagnosisDate)}</p>
-                  <p>Security: {plan.securityLevel || "—"}</p>
-                  {plan.followUpInstructions ? (
+                  <p>Start: {formatDate(plan.startDate)}</p>
+                  <p>Review: {formatDate(plan.reviewDate)}</p>
+                  {plan.recoveryGoals ? (
                     <p className="rounded-2xl bg-matcha-50 p-3 text-matcha-900">
-                      {plan.followUpInstructions}
+                      {plan.recoveryGoals}
                     </p>
                   ) : null}
                 </CardContent>

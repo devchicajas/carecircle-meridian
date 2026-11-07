@@ -2,8 +2,13 @@ import { AppShell } from "@/components/layout/app-shell";
 import { StatusBanner } from "@/components/care/status-banner";
 import { TaskRow } from "@/components/care/task-row";
 import { EmptyState } from "@/components/care/empty-state";
+import { CreateTaskForm } from "@/components/care/create-task-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { loadCareSnapshot } from "@/lib/meridian/care-data";
+import {
+  loadCareSnapshot,
+  resolveCaregiverLabel,
+  resolvePatientLabel,
+} from "@/lib/meridian/care-data";
 import { getPageViewer } from "@/lib/viewer";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +16,11 @@ export const dynamic = "force-dynamic";
 export default async function TasksPage() {
   const viewer = await getPageViewer();
   const snapshot = await loadCareSnapshot();
+  const tasks = snapshot.tasks.map((task) => ({
+    ...task,
+    patientName: resolvePatientLabel(snapshot.patients, task.patientRef),
+    assignee: resolveCaregiverLabel(snapshot.caregivers, task.assigneeRef),
+  }));
 
   return (
     <AppShell
@@ -32,8 +42,8 @@ export default async function TasksPage() {
             Assigned work across the circle
           </h1>
           <p className="mt-2 max-w-2xl text-ink-600">
-            Read-only Meridian <code>careTask</code> records. Status updates stay
-            disabled until PATCH is exposed and authorized.
+            Create and update tasks through Meridian Object API (
+            <code>careTask</code>). Business IDs are generated server-side.
           </p>
         </div>
 
@@ -47,24 +57,36 @@ export default async function TasksPage() {
           taskObject={snapshot.taskObject}
         />
 
+        <CreateTaskForm
+          patients={snapshot.patients.map((p) => ({
+            value: p.businessId || p.id,
+            label: `${p.name}${p.businessId ? ` (${p.businessId})` : ""}`,
+          }))}
+          caregivers={snapshot.caregivers.map((c) => ({
+            value: c.businessId || c.id,
+            label: `${c.name}${c.businessId ? ` (${c.businessId})` : ""}`,
+          }))}
+          carePlans={snapshot.carePlans.map((p) => ({
+            value: p.businessId || p.id,
+            label: `${p.businessId || p.id} · ${p.status}`,
+          }))}
+        />
+
         <Card>
           <CardHeader>
             <CardTitle>
-              {snapshot.tasks.length} task
-              {snapshot.tasks.length === 1 ? "" : "s"}
+              {tasks.length} task{tasks.length === 1 ? "" : "s"}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {snapshot.tasks.length === 0 ? (
+            {tasks.length === 0 ? (
               <EmptyState
                 title="No care tasks returned"
                 titleEs="Sin tareas"
-                detail="Confirm careTask is exposed and contains fictional demo rows."
+                detail="Confirm careTask is exposed and contains rows."
               />
             ) : (
-              snapshot.tasks.map((task) => (
-                <TaskRow key={task.id} task={task} />
-              ))
+              tasks.map((task) => <TaskRow key={task.id} task={task} />)
             )}
           </CardContent>
         </Card>

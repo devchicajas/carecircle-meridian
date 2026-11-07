@@ -3,7 +3,10 @@ import { StatusBanner } from "@/components/care/status-banner";
 import { EmptyState } from "@/components/care/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { loadCareSnapshot } from "@/lib/meridian/care-data";
+import {
+  loadCareSnapshot,
+  resolvePatientLabel,
+} from "@/lib/meridian/care-data";
 import { getPageViewer } from "@/lib/viewer";
 
 export const dynamic = "force-dynamic";
@@ -57,7 +60,11 @@ export default async function NotificationsPage() {
                   <div>
                     <div className="font-medium text-ink-900">{n.message}</div>
                     <div className="mt-1 text-xs text-ink-500">
-                      {[n.recipientType, n.recipientPatient, n.recipientCaregiver, n.language]
+                      {[
+                        n.notificationType,
+                        resolvePatientLabel(snapshot.patients, n.patientRef),
+                        n.recipientCaregiver,
+                      ]
                         .filter(Boolean)
                         .join(" · ")}
                     </div>

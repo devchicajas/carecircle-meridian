@@ -62,21 +62,19 @@ export default async function CaregiversPage() {
                     <div>
                       <div className="font-semibold text-ink-900">{c.name}</div>
                       <div className="text-xs text-ink-500">
-                        {c.role || "Caregiver"}
+                        {c.businessId || "Caregiver"}
                       </div>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {c.relationship ? (
-                      <Badge variant="outline">{c.relationship}</Badge>
-                    ) : null}
+                    {c.role ? <Badge variant="outline">{c.role}</Badge> : null}
+                    <Badge variant="matcha">{c.status}</Badge>
                     {c.language ? (
-                      <Badge variant="matcha">{c.language}</Badge>
+                      <Badge variant="outline">{c.language}</Badge>
                     ) : null}
                   </div>
                   <div className="text-sm text-ink-600">
-                    {c.patientName ? `Patient: ${c.patientName}` : "Unassigned"}
-                    {c.phone ? ` · ${c.phone}` : ""}
+                    {[c.email, c.phone].filter(Boolean).join(" · ") || "—"}
                   </div>
                 </CardContent>
               </Card>

@@ -1,5 +1,6 @@
 import { requireAppUser, privateJson } from "@/lib/auth";
-import { loadCareSnapshot } from "@/lib/meridian/care-data";
+import { createCareTask, loadCareSnapshot } from "@/lib/meridian/care-data";
+import { PlatformSDKError } from "@/lib/sdk/platformSDK";
 
 export const dynamic = "force-dynamic";
 
@@ -17,4 +18,55 @@ export async function GET(request: Request) {
     tasks: snapshot.tasks,
     viewer: { sub: identity.sub, name: identity.name, kind: identity.kind },
   });
+}
+
+export async function POST(request: Request) {
+  const identity = await requireAppUser(request);
+  if (identity instanceof Response) return identity;
+
+  try {
+    const body = (await request.json()) as {
+      patient?: string;
+      description?: string;
+      priority?: string;
+      status?: string;
+      dueDate?: string;
+      assignedCaregiver?: string;
+      carePlan?: string;
+    };
+
+    if (!body.patient || !body.description) {
+      return privateJson(
+        { error: "patient and description are required" },
+        { status: 400 },
+      );
+    }
+
+    const task = await createCareTask({
+      patient: body.patient,
+      description: body.description,
+      priority: body.priority,
+      status: body.status,
+      dueDate: body.dueDate,
+      assignedCaregiver: body.assignedCaregiver,
+      carePlan: body.carePlan,
+    });
+
+    return privateJson({ task }, { status: 201 });
+  } catch (err) {
+    if (err instanceof PlatformSDKError) {
+      return privateJson(
+        {
+          error: err.detail || err.message,
+          code: err.code,
+          traceId: err.traceId,
+        },
+        { status: err.status },
+      );
+    }
+    return privateJson(
+      { error: err instanceof Error ? err.message : "Create failed" },
+      { status: 500 },
+    );
+  }
 }

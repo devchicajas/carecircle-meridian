@@ -1,6 +1,11 @@
 import { discoverCareCircleSchema } from "@/lib/meridian/discovery";
 import { MERIDIAN_OBJECTS } from "@/lib/meridian/objects";
 import {
+  composePersonName,
+  flattenRecord,
+  recordEnvelopeId,
+} from "@/lib/meridian/records";
+import {
   createPlatformSDKFromEnv,
   PlatformSDKError,
 } from "@/lib/sdk/platformSDK";
@@ -10,82 +15,94 @@ export type DataSource = "meridian" | "unavailable";
 
 export type Patient = {
   id: string;
+  businessId?: string;
   name: string;
+  firstName?: string;
+  lastName?: string;
   status: string;
   language?: string;
   phone?: string;
   email?: string;
-  emergencyContactName?: string;
-  emergencyContactPhone?: string;
-  caregiver?: string;
-  condition?: string;
-  city?: string;
-  notes?: string;
+  dateOfBirth?: string;
+  careStartDate?: string;
   updatedAt?: string;
   raw: Record<string, unknown>;
 };
 
 export type Caregiver = {
   id: string;
+  businessId?: string;
   name: string;
   role?: string;
-  patientId?: string;
-  patientName?: string;
-  relationship?: string;
   language?: string;
   phone?: string;
-  accessPermissions?: string;
+  email?: string;
+  status: string;
+  raw: Record<string, unknown>;
+};
+
+export type Membership = {
+  id: string;
+  businessId?: string;
+  patientRef?: string;
+  caregiverRef?: string;
+  relationshipType?: string;
+  status: string;
+  startDate?: string;
+  endDate?: string;
   raw: Record<string, unknown>;
 };
 
 export type CarePlan = {
   id: string;
-  patientId?: string;
-  patientName?: string;
-  diagnosisDate?: string;
-  securityLevel?: string;
-  followUpInstructions?: string;
+  businessId?: string;
+  patientRef?: string;
+  recoveryGoals?: string;
+  dischargeDate?: string;
   assignedCoordinator?: string;
   status: string;
+  startDate?: string;
+  reviewDate?: string;
   raw: Record<string, unknown>;
 };
 
 export type Appointment = {
   id: string;
-  patientId?: string;
-  patientName?: string;
+  businessId?: string;
+  patientRef?: string;
   type?: string;
   provider?: string;
   dateTime?: string;
   location?: string;
   status: string;
-  transportationSupport?: string;
+  notes?: string;
   raw: Record<string, unknown>;
 };
 
 export type Medication = {
   id: string;
-  patientId?: string;
-  patientName?: string;
+  businessId?: string;
+  patientRef?: string;
   name: string;
-  dosage?: string;
+  instructions?: string;
   frequency?: string;
-  prescribingDoctor?: string;
-  lastRenewalDate?: string;
-  refillReminderEnabled?: string;
+  refillDate?: string;
+  status: string;
   raw: Record<string, unknown>;
 };
 
 export type CareTask = {
   id: string;
+  businessId?: string;
   title: string;
   status: string;
   priority?: string;
   dueAt?: string;
-  patientId?: string;
-  patientName?: string;
-  assignee?: string;
-  completionTimeline?: string;
+  patientRef?: string;
+  carePlanRef?: string;
+  assigneeRef?: string;
+  completedOn?: string;
+  escalated?: boolean;
   notes?: string;
   raw: Record<string, unknown>;
   canUpdateStatus: boolean;
@@ -93,14 +110,15 @@ export type CareTask = {
 
 export type NotificationItem = {
   id: string;
-  recipientType?: string;
-  recipientPatient?: string;
+  businessId?: string;
+  patientRef?: string;
   recipientCaregiver?: string;
-  language?: string;
-  message: string;
   relatedTask?: string;
   relatedAppointment?: string;
+  message: string;
+  notificationType?: string;
   status: string;
+  createdAt?: string;
   raw: Record<string, unknown>;
 };
 
@@ -118,6 +136,7 @@ export type CareSnapshot = {
   writeOpsNeeded: string[];
   patientObject: string;
   caregiverObject: string;
+  membershipObject: string;
   carePlanObject: string;
   appointmentObject: string;
   medicationObject: string;
@@ -126,6 +145,7 @@ export type CareSnapshot = {
   objects: string[];
   patients: Patient[];
   caregivers: Caregiver[];
+  memberships: Membership[];
   carePlans: CarePlan[];
   appointments: Appointment[];
   medications: Medication[];
@@ -133,394 +153,214 @@ export type CareSnapshot = {
   notifications: NotificationItem[];
   metrics: {
     patients: number;
-    activePatients: number;
+    activeCarePlans: number;
+    upcomingAppointments: number;
+    pendingTasks: number;
+    overdueTasks: number;
+    unreadNotifications: number;
     openTasks: number;
     completedTasks: number;
     needsAttention: number;
-    upcomingAppointments: number;
+    activePatients: number;
     medications: number;
-    unreadNotifications: number;
   };
 };
 
-function recordId(record: Record<string, unknown>) {
-  return (
-    pickString(record, [
-      "id",
-      "Id",
-      "ID",
-      "record_id",
-      "uuid",
-      "pk",
-      "patient_id",
-      "Patient ID",
-      "patientId",
-      "caregiver_id",
-      "Caregiver ID",
-      "plan_id",
-      "Plan ID",
-      "appointment_id",
-      "Appointment ID",
-      "medication_id",
-      "Medication ID",
-      "task_id",
-      "Task ID",
-      "notification_id",
-      "Notification ID",
-      "Event ID",
-    ]) ?? JSON.stringify(record).slice(0, 24)
-  );
-}
-
-function relationId(value: unknown): string | undefined {
-  if (value == null) return undefined;
-  if (typeof value === "string" || typeof value === "number") return String(value);
-  if (typeof value === "object") {
-    const obj = value as Record<string, unknown>;
-    return pickString(obj, ["id", "Id", "name", "Name", "label"]);
-  }
-  return undefined;
-}
-
-function relationName(value: unknown): string | undefined {
-  if (value == null) return undefined;
-  if (typeof value === "string") return value;
-  if (typeof value === "object") {
-    const obj = value as Record<string, unknown>;
-    return pickString(obj, [
-      "name",
-      "Name",
-      "full_name",
-      "Full Name",
-      "label",
-      "title",
-    ]);
-  }
-  return undefined;
-}
-
-export function normalizePatient(record: Record<string, unknown>): Patient {
-  const first = pickString(record, ["first_name", "firstName", "FirstName"]);
-  const last = pickString(record, ["last_name", "lastName", "LastName"]);
-  const combined = [first, last].filter(Boolean).join(" ");
+function normalizePatient(envelope: Record<string, unknown>): Patient {
+  const f = flattenRecord(envelope);
   return {
-    id: recordId(record),
-    name:
-      pickString(record, [
-        "full_name",
-        "Full Name",
-        "name",
-        "Name",
-        "patient_name",
-        "display_name",
-      ]) ||
-      combined ||
-      "Unnamed patient",
-    status:
-      pickString(record, [
-        "case_status",
-        "Case Status",
-        "status",
-        "Status",
-        "care_status",
-      ]) || "Unknown",
-    language: pickString(record, [
-      "preferred_language",
-      "Preferred Language",
-      "language",
-      "Language",
-    ]),
-    phone: pickString(record, ["phone", "Phone", "mobile", "Mobile"]),
-    email: pickString(record, ["email", "Email"]),
-    emergencyContactName: pickString(record, [
-      "emergency_contact_name",
-      "Emergency Contact Name",
-    ]),
-    emergencyContactPhone: pickString(record, [
-      "emergency_contact_phone",
-      "Emergency Contact Phone",
-    ]),
-    caregiver: pickString(record, [
-      "caregiver",
-      "Caregiver",
-      "primary_caregiver",
-      "assigned_caregiver",
-    ]),
-    condition: pickString(record, [
-      "condition",
-      "Condition",
-      "diagnosis",
-      "Diagnosis",
-    ]),
-    city: pickString(record, ["city", "City", "location", "Location"]),
-    notes: pickString(record, ["notes", "Notes", "summary", "Summary"]),
-    updatedAt: pickString(record, [
-      "updated_at",
-      "updatedAt",
-      "modified_at",
-      "last_modified",
-    ]),
-    raw: record,
+    id: recordEnvelopeId(envelope),
+    businessId: pickString(f, ["patientId"]),
+    name: composePersonName(f),
+    firstName: pickString(f, ["firstName"]),
+    lastName: pickString(f, ["lastName"]),
+    status: pickString(f, ["careStatus", "status"]) || "Unknown",
+    language: pickString(f, ["preferredLanguage"]),
+    phone: pickString(f, ["phoneNumber", "phone"]),
+    email: pickString(f, ["emailAddress", "email"]),
+    dateOfBirth: pickString(f, ["dateOfBirth"]),
+    careStartDate: pickString(f, ["careStartDate"]),
+    updatedAt: pickString(f, ["updatedAt"]),
+    raw: envelope,
   };
 }
 
-function normalizeCaregiver(record: Record<string, unknown>): Caregiver {
-  const patient = record.Patient ?? record.patient;
+function normalizeCaregiver(envelope: Record<string, unknown>): Caregiver {
+  const f = flattenRecord(envelope);
   return {
-    id: recordId(record),
-    name:
-      pickString(record, ["full_name", "Full Name", "name", "Name"]) ||
-      "Unnamed caregiver",
-    role: pickString(record, ["role", "Role"]),
-    patientId: relationId(patient) || pickString(record, ["patient_id", "PatientId"]),
-    patientName:
-      relationName(patient) ||
-      pickString(record, ["patient_name", "PatientName"]),
-    relationship: pickString(record, [
-      "relationship_to_patient",
-      "Relationship to Patient",
-      "relationship",
-    ]),
-    language: pickString(record, [
-      "preferred_language",
-      "Preferred Language",
-      "language",
-    ]),
-    phone: pickString(record, ["phone", "Phone"]),
-    accessPermissions: pickString(record, [
-      "access_permissions",
-      "Access Permissions",
-      "permissions",
-    ]),
-    raw: record,
+    id: recordEnvelopeId(envelope),
+    businessId: pickString(f, ["caregiverId"]),
+    name: composePersonName(f),
+    role: pickString(f, ["caregiverType"]),
+    language: pickString(f, ["preferredLanguage"]),
+    phone: pickString(f, ["phoneNumber"]),
+    email: pickString(f, ["emailAddress", "email"]),
+    status: pickString(f, ["status"]) || "Unknown",
+    raw: envelope,
   };
 }
 
-function normalizeCarePlan(record: Record<string, unknown>): CarePlan {
-  const patient = record.Patient ?? record.patient;
+function normalizeMembership(envelope: Record<string, unknown>): Membership {
+  const f = flattenRecord(envelope);
   return {
-    id: recordId(record),
-    patientId: relationId(patient) || pickString(record, ["patient_id"]),
-    patientName: relationName(patient) || pickString(record, ["patient_name"]),
-    diagnosisDate: pickString(record, [
-      "diagnosis_date",
-      "Diagnosis Date",
-      "diagnosisDate",
-    ]),
-    securityLevel: pickString(record, [
-      "security_level",
-      "Security Level",
-      "securityLevel",
-    ]),
-    followUpInstructions: pickString(record, [
-      "follow_up_instructions",
-      "Follow-up Instructions",
-      "followUpInstructions",
-    ]),
-    assignedCoordinator: pickString(record, [
-      "assigned_coordinator",
-      "Assigned Coordinator",
-      "assignedCoordinator",
-    ]),
-    status: pickString(record, ["status", "Status"]) || "Unknown",
-    raw: record,
+    id: recordEnvelopeId(envelope),
+    businessId: pickString(f, ["membershipId"]),
+    patientRef: pickString(f, ["patient"]),
+    caregiverRef: pickString(f, ["caregiver"]),
+    relationshipType: pickString(f, ["relationshipType"]),
+    status: pickString(f, ["membershipStatus", "status"]) || "Unknown",
+    startDate: pickString(f, ["startDate"]),
+    endDate: pickString(f, ["endDate"]),
+    raw: envelope,
   };
 }
 
-function normalizeAppointment(record: Record<string, unknown>): Appointment {
-  const patient = record.Patient ?? record.patient;
+function normalizeCarePlan(envelope: Record<string, unknown>): CarePlan {
+  const f = flattenRecord(envelope);
   return {
-    id: recordId(record),
-    patientId: relationId(patient) || pickString(record, ["patient_id"]),
-    patientName: relationName(patient) || pickString(record, ["patient_name"]),
-    type: pickString(record, [
-      "appointment_type",
-      "Appointment Type",
-      "type",
-      "Type",
-    ]),
-    provider: pickString(record, [
-      "provider_name",
-      "Provider Name",
-      "provider",
-    ]),
-    dateTime: pickString(record, [
-      "date_time",
-      "Date & Time",
-      "dateTime",
-      "scheduled_at",
-      "start_at",
-    ]),
-    location: pickString(record, ["location", "Location"]),
-    status: pickString(record, ["status", "Status"]) || "Unknown",
-    transportationSupport: pickString(record, [
-      "transportation_support",
-      "Transportation Support",
-    ]),
-    raw: record,
+    id: recordEnvelopeId(envelope),
+    businessId: pickString(f, ["carePlanId"]),
+    patientRef: pickString(f, ["patient"]),
+    recoveryGoals: pickString(f, ["recoveryGoals"]),
+    dischargeDate: pickString(f, ["dischargeDate"]),
+    assignedCoordinator: pickString(f, ["assignedCoordinator"]),
+    status: pickString(f, ["status"]) || "Unknown",
+    startDate: pickString(f, ["startDate"]),
+    reviewDate: pickString(f, ["reviewDate"]),
+    raw: envelope,
   };
 }
 
-function normalizeMedication(record: Record<string, unknown>): Medication {
-  const patient = record.Patient ?? record.patient;
+function normalizeAppointment(envelope: Record<string, unknown>): Appointment {
+  const f = flattenRecord(envelope);
   return {
-    id: recordId(record),
-    patientId: relationId(patient) || pickString(record, ["patient_id"]),
-    patientName: relationName(patient) || pickString(record, ["patient_name"]),
-    name:
-      pickString(record, [
-        "medication_name",
-        "Medication Name",
-        "name",
-        "Name",
-      ]) || "Untitled medication",
-    dosage: pickString(record, [
-      "prescribed_dosage",
-      "Prescribed Dosage",
-      "dosage",
-    ]),
-    frequency: pickString(record, ["frequency", "Frequency"]),
-    prescribingDoctor: pickString(record, [
-      "prescribing_doctor",
-      "Prescribing Doctor",
-    ]),
-    lastRenewalDate: pickString(record, [
-      "last_renewal_date",
-      "Last Renewal Date",
-    ]),
-    refillReminderEnabled: pickString(record, [
-      "refill_reminder_enabled",
-      "Refill Reminder Enabled",
-    ]),
-    raw: record,
+    id: recordEnvelopeId(envelope),
+    businessId: pickString(f, ["appointmentId"]),
+    patientRef: pickString(f, ["patient"]),
+    type: pickString(f, ["appointmentType"]),
+    provider: pickString(f, ["provider"]),
+    dateTime: pickString(f, ["appointmentDateTime"]),
+    location: pickString(f, ["location"]),
+    status: pickString(f, ["status"]) || "Unknown",
+    notes: pickString(f, ["notes"]),
+    raw: envelope,
   };
 }
 
-export function normalizeTask(record: Record<string, unknown>): CareTask {
-  const patient = record.Patient ?? record.patient;
-  const caregiver = record["Assigned Caregiver"] ?? record.assigned_caregiver ?? record.assignee;
+function normalizeMedication(envelope: Record<string, unknown>): Medication {
+  const f = flattenRecord(envelope);
   return {
-    id: recordId(record),
-    title:
-      pickString(record, [
-        "task_description",
-        "Task Description",
-        "title",
-        "Title",
-        "name",
-        "Name",
-        "description",
-        "Description",
-      ]) || "Untitled task",
-    status: pickString(record, ["status", "Status"]) || "Open",
-    priority: pickString(record, ["priority", "Priority"]),
-    dueAt: pickString(record, [
-      "due_date",
-      "Due Date",
-      "due_at",
-      "dueAt",
-      "deadline",
-    ]),
-    patientId: relationId(patient) || pickString(record, ["patient_id", "PatientId"]),
-    patientName:
-      relationName(patient) ||
-      pickString(record, ["patient_name", "PatientName"]),
-    assignee:
-      relationName(caregiver) ||
-      pickString(record, [
-        "assigned_caregiver",
-        "Assigned Caregiver",
-        "assignee",
-        "Assignee",
-      ]),
-    completionTimeline: pickString(record, [
-      "completion_timeline",
-      "Completion Timeline",
-    ]),
-    notes: pickString(record, ["notes", "Notes", "details"]),
-    raw: record,
-    canUpdateStatus: false, // read-only until Meridian enables PATCH
+    id: recordEnvelopeId(envelope),
+    businessId: pickString(f, ["medicationId"]),
+    patientRef: pickString(f, ["patient"]),
+    name: pickString(f, ["medicationName", "name"]) || "Untitled medication",
+    instructions: pickString(f, ["instructions"]),
+    frequency: pickString(f, ["frequency"]),
+    refillDate: pickString(f, ["refillDate"]),
+    status: pickString(f, ["status"]) || "Unknown",
+    raw: envelope,
+  };
+}
+
+export function normalizeTask(envelope: Record<string, unknown>): CareTask {
+  const f = flattenRecord(envelope);
+  return {
+    id: recordEnvelopeId(envelope),
+    businessId: pickString(f, ["taskId"]),
+    title: pickString(f, ["description", "title", "name"]) || "Untitled task",
+    status: pickString(f, ["status"]) || "Pending",
+    priority: pickString(f, ["priority"]),
+    dueAt: pickString(f, ["dueDate"]),
+    patientRef: pickString(f, ["patient"]),
+    carePlanRef: pickString(f, ["carePlan"]),
+    assigneeRef: pickString(f, ["assignedCaregiver"]),
+    completedOn: pickString(f, ["completedOn"]),
+    escalated: typeof f.escalated === "boolean" ? f.escalated : undefined,
+    notes: pickString(f, ["notes"]),
+    raw: envelope,
+    canUpdateStatus: true,
   };
 }
 
 function normalizeNotification(
-  record: Record<string, unknown>,
+  envelope: Record<string, unknown>,
 ): NotificationItem {
+  const f = flattenRecord(envelope);
   return {
-    id: recordId(record),
-    recipientType: pickString(record, [
-      "recipient_type",
-      "Recipient Type",
-    ]),
-    recipientPatient: pickString(record, [
-      "recipient_patient",
-      "Recipient Patient",
-    ]),
-    recipientCaregiver: pickString(record, [
-      "recipient_caregiver",
-      "Recipient Caregiver",
-    ]),
-    language: pickString(record, ["language", "Language"]),
-    message:
-      pickString(record, ["message", "Message", "body", "Body"]) ||
-      "Notification",
-    relatedTask: pickString(record, ["related_task", "Related Task"]),
-    relatedAppointment: pickString(record, [
-      "related_appointment",
-      "Related Appointment",
-    ]),
-    status: pickString(record, ["status", "Status"]) || "Unknown",
-    raw: record,
+    id: recordEnvelopeId(envelope),
+    businessId: pickString(f, ["notificationId"]),
+    patientRef: pickString(f, ["patient"]),
+    recipientCaregiver: pickString(f, ["recipientCaregiver"]),
+    relatedTask: pickString(f, ["relatedTask"]),
+    relatedAppointment: pickString(f, ["relatedAppointment"]),
+    message: pickString(f, ["message"]) || "Notification",
+    notificationType: pickString(f, ["notificationType"]),
+    status: pickString(f, ["readStatus", "status"]) || "Unknown",
+    createdAt: pickString(f, ["createdAt"]),
+    raw: envelope,
   };
 }
 
-function isOpenStatus(status: string) {
-  const s = status.toLowerCase();
-  return !(
-    s.includes("complete") ||
-    s.includes("done") ||
-    s.includes("closed") ||
-    s.includes("cancel")
-  );
+function isPending(status: string) {
+  return /pending|in progress|open/i.test(status);
 }
 
-function computeMetrics(snapshot: {
+function isOverdue(task: CareTask) {
+  if (/overdue/i.test(task.status)) return true;
+  if (!task.dueAt || /complete|cancel/i.test(task.status)) return false;
+  const due = new Date(task.dueAt);
+  if (Number.isNaN(due.getTime())) return false;
+  const endOfDue = new Date(due);
+  endOfDue.setHours(23, 59, 59, 999);
+  return endOfDue.getTime() < Date.now();
+}
+
+function computeMetrics(input: {
   patients: Patient[];
-  tasks: CareTask[];
+  carePlans: CarePlan[];
   appointments: Appointment[];
-  medications: Medication[];
+  tasks: CareTask[];
   notifications: NotificationItem[];
+  medications: Medication[];
 }) {
-  const openTasks = snapshot.tasks.filter((t) => isOpenStatus(t.status)).length;
+  const pendingTasks = input.tasks.filter((t) => isPending(t.status)).length;
+  const overdueTasks = input.tasks.filter((t) => isOverdue(t)).length;
+  const openTasks = input.tasks.filter(
+    (t) => !/complete|cancel/i.test(t.status),
+  ).length;
   return {
-    patients: snapshot.patients.length,
-    activePatients: snapshot.patients.filter((p) =>
-      /active|open|monitoring|en curso/i.test(p.status),
+    patients: input.patients.length,
+    activeCarePlans: input.carePlans.filter((p) => /active/i.test(p.status))
+      .length,
+    upcomingAppointments: input.appointments.filter((a) =>
+      /scheduled|rescheduled/i.test(a.status),
+    ).length,
+    pendingTasks,
+    overdueTasks,
+    unreadNotifications: input.notifications.filter((n) =>
+      /unread|pending|new/i.test(n.status),
     ).length,
     openTasks,
-    completedTasks: snapshot.tasks.length - openTasks,
-    needsAttention: snapshot.tasks.filter(
-      (t) =>
-        isOpenStatus(t.status) &&
-        /high|urgent|critical|alta/i.test(t.priority ?? ""),
-    ).length,
-    upcomingAppointments: snapshot.appointments.filter((a) =>
-      isOpenStatus(a.status),
-    ).length,
-    medications: snapshot.medications.length,
-    unreadNotifications: snapshot.notifications.filter((n) =>
-      /unread|pending|new|open/i.test(n.status),
-    ).length,
+    completedTasks: input.tasks.filter((t) => /complete/i.test(t.status))
+      .length,
+    needsAttention: overdueTasks,
+    activePatients: input.patients.filter((p) => /active|recovery|chronic|routine/i.test(p.status))
+      .length,
+    medications: input.medications.length,
   };
 }
 
 function emptySnapshot(
-  partial: Partial<CareSnapshot> & Pick<CareSnapshot, "warnings" | "source" | "connected">,
+  partial: Partial<CareSnapshot> &
+    Pick<CareSnapshot, "warnings" | "source" | "connected">,
 ): CareSnapshot {
   const patients = partial.patients ?? [];
-  const tasks = partial.tasks ?? [];
+  const caregivers = partial.caregivers ?? [];
+  const memberships = partial.memberships ?? [];
+  const carePlans = partial.carePlans ?? [];
   const appointments = partial.appointments ?? [];
   const medications = partial.medications ?? [];
+  const tasks = partial.tasks ?? [];
   const notifications = partial.notifications ?? [];
   return {
     source: partial.source,
@@ -531,6 +371,7 @@ function emptySnapshot(
     writeOpsNeeded: partial.writeOpsNeeded ?? [],
     patientObject: MERIDIAN_OBJECTS.patient,
     caregiverObject: MERIDIAN_OBJECTS.caregiver,
+    membershipObject: MERIDIAN_OBJECTS.careCircleMembership,
     carePlanObject: MERIDIAN_OBJECTS.carePlan,
     appointmentObject: MERIDIAN_OBJECTS.appointment,
     medicationObject: MERIDIAN_OBJECTS.medication,
@@ -538,18 +379,20 @@ function emptySnapshot(
     notificationObject: MERIDIAN_OBJECTS.notification,
     objects: partial.objects ?? Object.values(MERIDIAN_OBJECTS),
     patients,
-    caregivers: partial.caregivers ?? [],
-    carePlans: partial.carePlans ?? [],
+    caregivers,
+    memberships,
+    carePlans,
     appointments,
     medications,
     tasks,
     notifications,
     metrics: computeMetrics({
       patients,
-      tasks,
+      carePlans,
       appointments,
-      medications,
+      tasks,
       notifications,
+      medications,
     }),
   };
 }
@@ -568,9 +411,6 @@ async function listObject(
       warnings.push(
         `${label}: HTTP ${err.status} ${err.code}${err.detail ? ` — ${err.detail}` : ""}${err.traceId ? ` (trace ${err.traceId})` : ""}`,
       );
-      if (!warnings.some((w) => w.startsWith("authError:"))) {
-        // stash structured auth once
-      }
     } else if (err instanceof Error) {
       warnings.push(`${label}: ${err.message}`);
     } else {
@@ -602,22 +442,28 @@ export async function loadCareSnapshot(): Promise<CareSnapshot> {
   const [
     patientRows,
     caregiverRows,
+    membershipRows,
     carePlanRows,
     appointmentRows,
     medicationRows,
     taskRows,
     notificationRows,
   ] = await Promise.all([
-    listObject(sdk, schema.patientObject, "patient", warnings),
-    listObject(sdk, schema.caregiverObject, "caregiver", warnings),
-    listObject(sdk, schema.carePlanObject, "carePlan", warnings),
-    listObject(sdk, schema.appointmentObject, "appointment", warnings),
-    listObject(sdk, schema.medicationObject, "medication", warnings),
-    listObject(sdk, schema.taskObject, "careTask", warnings),
-    listObject(sdk, schema.notificationObject, "notification", warnings),
+    listObject(sdk, MERIDIAN_OBJECTS.patient, "patient", warnings),
+    listObject(sdk, MERIDIAN_OBJECTS.caregiver, "caregiver", warnings),
+    listObject(
+      sdk,
+      MERIDIAN_OBJECTS.careCircleMembership,
+      "careCircleMembership",
+      warnings,
+    ),
+    listObject(sdk, MERIDIAN_OBJECTS.carePlan, "carePlan", warnings),
+    listObject(sdk, MERIDIAN_OBJECTS.appointment, "appointment", warnings),
+    listObject(sdk, MERIDIAN_OBJECTS.medication, "medication", warnings),
+    listObject(sdk, MERIDIAN_OBJECTS.careTask, "careTask", warnings),
+    listObject(sdk, MERIDIAN_OBJECTS.notification, "notification", warnings),
   ]);
 
-  // Capture first FORBIDDEN-style failure as authError if OpenAPI didn't
   if (!authError) {
     const forbidden = warnings.find((w) => /HTTP 401|HTTP 403/.test(w));
     if (forbidden) {
@@ -635,25 +481,6 @@ export async function loadCareSnapshot(): Promise<CareSnapshot> {
     }
   }
 
-  const patients = patientRows.map(normalizePatient);
-  const caregivers = caregiverRows.map(normalizeCaregiver);
-  const carePlans = carePlanRows.map(normalizeCarePlan);
-  const appointments = appointmentRows.map(normalizeAppointment);
-  const medications = medicationRows.map(normalizeMedication);
-  const tasks = taskRows.map(normalizeTask);
-  const notifications = notificationRows.map(normalizeNotification);
-
-  // Enrich patient caregiver label from caregiver records when possible
-  for (const patient of patients) {
-    if (patient.caregiver) continue;
-    const linked = caregivers.find(
-      (c) =>
-        c.patientId === patient.id ||
-        c.patientName?.toLowerCase() === patient.name.toLowerCase(),
-    );
-    if (linked) patient.caregiver = linked.name;
-  }
-
   return emptySnapshot({
     source: "meridian",
     connected: true,
@@ -661,25 +488,42 @@ export async function loadCareSnapshot(): Promise<CareSnapshot> {
     warnings,
     writeOpsNeeded: schema.writeOpsNeeded,
     objects: schema.objects.map((o) => o.name),
-    patients,
-    caregivers,
-    carePlans,
-    appointments,
-    medications,
-    tasks,
-    notifications,
+    patients: patientRows.map(normalizePatient),
+    caregivers: caregiverRows.map(normalizeCaregiver),
+    memberships: membershipRows.map(normalizeMembership),
+    carePlans: carePlanRows.map(normalizeCarePlan),
+    appointments: appointmentRows.map(normalizeAppointment),
+    medications: medicationRows.map(normalizeMedication),
+    tasks: taskRows.map(normalizeTask),
+    notifications: notificationRows.map(normalizeNotification),
   });
+}
+
+function matchesPatientRef(
+  patient: Patient,
+  ref?: string,
+) {
+  if (!ref) return false;
+  return (
+    ref === patient.id ||
+    ref === patient.businessId ||
+    ref.toLowerCase() === patient.name.toLowerCase()
+  );
 }
 
 export async function getPatientById(id: string) {
   const snapshot = await loadCareSnapshot();
-  const patient = snapshot.patients.find((p) => p.id === id) ?? null;
+  const patient =
+    snapshot.patients.find(
+      (p) => p.id === id || p.businessId === id,
+    ) ?? null;
   if (!patient) {
     return {
       snapshot,
       patient: null,
       tasks: [] as CareTask[],
       caregivers: [] as Caregiver[],
+      memberships: [] as Membership[],
       carePlans: [] as CarePlan[],
       appointments: [] as Appointment[],
       medications: [] as Medication[],
@@ -687,33 +531,38 @@ export async function getPatientById(id: string) {
     };
   }
 
-  const matchesPatient = (patientId?: string, patientName?: string) =>
-    patientId === patient.id ||
-    (!!patientName &&
-      patientName.toLowerCase() === patient.name.toLowerCase());
+  const memberships = snapshot.memberships.filter((m) =>
+    matchesPatientRef(patient, m.patientRef),
+  );
+  const caregiverRefs = new Set(
+    memberships.map((m) => m.caregiverRef).filter(Boolean),
+  );
+  const caregivers = snapshot.caregivers.filter(
+    (c) =>
+      caregiverRefs.has(c.businessId) ||
+      caregiverRefs.has(c.id) ||
+      memberships.some((m) => m.caregiverRef === c.name),
+  );
 
   return {
     snapshot,
     patient,
-    tasks: snapshot.tasks.filter((t) =>
-      matchesPatient(t.patientId, t.patientName),
-    ),
-    caregivers: snapshot.caregivers.filter((c) =>
-      matchesPatient(c.patientId, c.patientName),
-    ),
+    memberships,
+    caregivers,
     carePlans: snapshot.carePlans.filter((p) =>
-      matchesPatient(p.patientId, p.patientName),
+      matchesPatientRef(patient, p.patientRef),
     ),
     appointments: snapshot.appointments.filter((a) =>
-      matchesPatient(a.patientId, a.patientName),
+      matchesPatientRef(patient, a.patientRef),
     ),
     medications: snapshot.medications.filter((m) =>
-      matchesPatient(m.patientId, m.patientName),
+      matchesPatientRef(patient, m.patientRef),
     ),
-    notifications: snapshot.notifications.filter(
-      (n) =>
-        n.recipientPatient === patient.id ||
-        n.recipientPatient?.toLowerCase() === patient.name.toLowerCase(),
+    tasks: snapshot.tasks.filter((t) =>
+      matchesPatientRef(patient, t.patientRef),
+    ),
+    notifications: snapshot.notifications.filter((n) =>
+      matchesPatientRef(patient, n.patientRef),
     ),
   };
 }
@@ -722,4 +571,113 @@ export function findMariaGonzalez(patients: Patient[]) {
   return (
     patients.find((p) => /mar[ií]a\s+gonz[aá]lez/i.test(p.name)) ?? null
   );
+}
+
+export function resolvePatientLabel(
+  patients: Patient[],
+  ref?: string,
+) {
+  if (!ref) return undefined;
+  const match = patients.find(
+    (p) => p.businessId === ref || p.id === ref || p.name === ref,
+  );
+  return match?.name ?? ref;
+}
+
+export function resolveCaregiverLabel(
+  caregivers: Caregiver[],
+  ref?: string,
+) {
+  if (!ref) return undefined;
+  const match = caregivers.find(
+    (c) => c.businessId === ref || c.id === ref || c.name === ref,
+  );
+  return match?.name ?? ref;
+}
+
+/** Create a care task — Meridian generates taskId. Do not send fabricated IDs. */
+export async function createCareTask(values: {
+  patient: string;
+  description: string;
+  priority?: string;
+  status?: string;
+  dueDate?: string;
+  assignedCaregiver?: string;
+  carePlan?: string;
+}) {
+  const sdk = createPlatformSDKFromEnv();
+  if (!sdk) {
+    throw new PlatformSDKError({
+      status: 503,
+      code: "MISSING_API_KEY",
+      detail: "MERIDIAN_API_KEY required to create care tasks.",
+    });
+  }
+
+  const payload: Record<string, unknown> = {
+    patient: values.patient,
+    description: values.description,
+    priority: values.priority || "Medium",
+    status: values.status || "Pending",
+  };
+  if (values.dueDate) payload.dueDate = values.dueDate;
+  if (values.assignedCaregiver) {
+    payload.assignedCaregiver = values.assignedCaregiver;
+  }
+  if (values.carePlan) payload.carePlan = values.carePlan;
+
+  const created = await sdk.createRecord(
+    MERIDIAN_OBJECTS.careTask,
+    payload,
+    "CareCircle demo: create care task",
+  );
+  return normalizeTask(created as Record<string, unknown>);
+}
+
+export async function updateCareTaskStatus(
+  taskId: string,
+  status: string,
+) {
+  const sdk = createPlatformSDKFromEnv();
+  if (!sdk) {
+    throw new PlatformSDKError({
+      status: 503,
+      code: "MISSING_API_KEY",
+      detail: "MERIDIAN_API_KEY required to update care tasks.",
+    });
+  }
+
+  const values: Record<string, unknown> = { status };
+  if (/complete/i.test(status)) {
+    values.completedOn = new Date().toISOString().slice(0, 10);
+  }
+
+  const updated = await sdk.updateRecord(
+    MERIDIAN_OBJECTS.careTask,
+    taskId,
+    values,
+    "CareCircle demo: update care task status",
+  );
+  return normalizeTask(updated as Record<string, unknown>);
+}
+
+export async function updateNotificationReadStatus(
+  notificationId: string,
+  readStatus: string,
+) {
+  const sdk = createPlatformSDKFromEnv();
+  if (!sdk) {
+    throw new PlatformSDKError({
+      status: 503,
+      code: "MISSING_API_KEY",
+      detail: "MERIDIAN_API_KEY required to update notifications.",
+    });
+  }
+  const updated = await sdk.updateRecord(
+    MERIDIAN_OBJECTS.notification,
+    notificationId,
+    { readStatus },
+    "CareCircle demo: update notification read status",
+  );
+  return normalizeNotification(updated as Record<string, unknown>);
 }
