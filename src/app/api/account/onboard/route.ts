@@ -72,7 +72,7 @@ export async function POST(request: Request) {
     let linked: {
       id: string;
       businessId?: string;
-      mode: "created" | "linked_by_exact_email";
+      mode: "created" | "linked_by_exact_email" | "claimed_unlinked_family_caregiver";
       readBack: boolean;
     };
 
@@ -86,14 +86,27 @@ export async function POST(request: Request) {
           ? await createPatient(sdk, row.email, fields)
           : await createCaregiver(sdk, row.email, fields);
       } catch (err) {
-        // Meridian still colliding on *-001 — fall back to exact-email link.
+        // Meridian still colliding on *-001 — fall back to exact-email link,
+        // then claim an unlinked Family Caregiver slot if needed.
         const conflict =
           err instanceof PlatformSDKError &&
           (err.status === 409 || /already exists/i.test(err.detail || err.message));
         if (!conflict) throw err;
-        linked = isPatient
-          ? await linkPatientByExactEmail(sdk, row.email, fields)
-          : await linkCaregiverByExactEmail(sdk, row.email, fields);
+        try {
+          linked = isPatient
+            ? await linkPatientByExactEmail(sdk, row.email, fields)
+            : await linkCaregiverByExactEmail(sdk, row.email, fields);
+        } catch (linkErr) {
+          if (
+            !isPatient &&
+            linkErr instanceof PlatformSDKError &&
+            linkErr.code === "EMAIL_PROFILE_NOT_FOUND"
+          ) {
+            linked = await claimUnlinkedFamilyCaregiver(sdk, row.email, fields);
+          } else {
+            throw linkErr;
+          }
+        }
       }
     }
 
@@ -225,33 +238,35 @@ async function createPatient(
   };
 }
 
-async function linkCaregiverByExactEmail(
+async function findCaregiverByExactEmail(
   sdk: PlatformSDK,
   email: string,
-  fields: ProfileFields,
 ) {
   const { records } = await sdk.listRecords(MERIDIAN_OBJECTS.caregiver, {
     limit: 200,
   });
-  const match = (records as Record<string, unknown>[]).find((row) => {
+  const matches = (records as Record<string, unknown>[]).filter((row) => {
     const flat = flattenRecord(row);
     const rowEmail = pickString(flat, ["emailAddress", "email"]);
-    const type = pickString(flat, ["caregiverType"]) || "";
-    return (
-      !!rowEmail &&
-      rowEmail.toLowerCase() === email.toLowerCase() &&
-      /family caregiver/i.test(type)
-    );
+    return !!rowEmail && rowEmail.toLowerCase() === email.toLowerCase();
   });
-  if (!match) {
-    throw new PlatformSDKError({
-      status: 404,
-      code: "EMAIL_PROFILE_NOT_FOUND",
-      detail:
-        "No matching caregiver profile was found for this email yet. Add this email on your Family Caregiver record in Meridian, then save again.",
-    });
-  }
-  const id = recordEnvelopeId(match);
+  // Prefer Family Caregiver rows when several share the same email.
+  return (
+    matches.find((row) =>
+      /family caregiver/i.test(
+        pickString(flattenRecord(row), ["caregiverType"]) || "",
+      ),
+    ) || matches[0] || null
+  );
+}
+
+async function patchCaregiverProfile(
+  sdk: PlatformSDK,
+  id: string,
+  email: string,
+  fields: ProfileFields,
+  reason: string,
+) {
   await sdk.updateRecord(
     MERIDIAN_OBJECTS.caregiver,
     id,
@@ -266,15 +281,95 @@ async function linkCaregiverByExactEmail(
       status: "Active",
       portalAccessStatus: "Linked",
     },
-    `CareCircle onboarding: update caregiver for ${email}`,
+    reason,
   );
   const saved = await readBackSaved(sdk, MERIDIAN_OBJECTS.caregiver, id);
   const flat = flattenRecord(saved);
   return {
     id,
     businessId: pickString(flat, ["caregiverId"]),
+    readBack: true as const,
+  };
+}
+
+async function linkCaregiverByExactEmail(
+  sdk: PlatformSDK,
+  email: string,
+  fields: ProfileFields,
+) {
+  const match = await findCaregiverByExactEmail(sdk, email);
+  if (!match) {
+    throw new PlatformSDKError({
+      status: 404,
+      code: "EMAIL_PROFILE_NOT_FOUND",
+      detail:
+        "No matching caregiver profile was found for this email yet. Add this email on your Family Caregiver record in Meridian, then save again.",
+    });
+  }
+  const id = recordEnvelopeId(match);
+  const patched = await patchCaregiverProfile(
+    sdk,
+    id,
+    email,
+    fields,
+    `CareCircle onboarding: update caregiver for ${email}`,
+  );
+  return {
+    ...patched,
     mode: "linked_by_exact_email" as const,
-    readBack: true,
+  };
+}
+
+/**
+ * Meridian caregiverId sequence is stuck on CG-001 and refuses new creates.
+ * Reuse an existing Family Caregiver that is not portal-Linked yet (seed rows).
+ */
+async function claimUnlinkedFamilyCaregiver(
+  sdk: PlatformSDK,
+  email: string,
+  fields: ProfileFields,
+) {
+  const { records } = await sdk.listRecords(MERIDIAN_OBJECTS.caregiver, {
+    limit: 200,
+  });
+  const candidates = (records as Record<string, unknown>[])
+    .map((row) => {
+      const flat = flattenRecord(row);
+      return { row, flat, id: recordEnvelopeId(row) };
+    })
+    .filter(({ flat }) => {
+      const type = pickString(flat, ["caregiverType"]) || "";
+      if (!/family caregiver/i.test(type)) return false;
+      const portal = (pickString(flat, ["portalAccessStatus"]) || "").trim();
+      if (/^linked$/i.test(portal)) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const aId = pickString(a.flat, ["caregiverId"]) || "";
+      const bId = pickString(b.flat, ["caregiverId"]) || "";
+      return aId.localeCompare(bId, undefined, { numeric: true });
+    });
+
+  const pick = candidates[0];
+  if (!pick) {
+    throw new PlatformSDKError({
+      status: 409,
+      code: "CAREGIVER_ID_SEQUENCE_STUCK",
+      detail:
+        "Meridian still cannot allocate a new caregiver ID, and no unlinked Family Caregiver is available to claim. In Meridian Object Designer, advance the caregiverId sequence past existing CG-* values, then retry.",
+    });
+  }
+
+  const patched = await patchCaregiverProfile(
+    sdk,
+    pick.id,
+    email,
+    fields,
+    `CareCircle onboarding: claim unlinked family caregiver for ${email}`,
+  );
+  return {
+    ...patched,
+    mode: "claimed_unlinked_family_caregiver" as const,
   };
 }
 
